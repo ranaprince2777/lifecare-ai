@@ -115,18 +115,33 @@ async function extractWithPyMuPDF(filePath: string): Promise<TextExtractionResul
  */
 async function extractWithPdfParse(buffer: Buffer): Promise<TextExtractionResult> {
   try {
-    // Dynamic import to support both ESM and CommonJS
+    // Dynamic import to support both ESM, CommonJS, and pdf-parse v2 API
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(buffer);
-    const text = data.text || '';
+    const pdfModule = require('pdf-parse');
+    let text = '';
+    let pageCount = 1;
+
+    if (typeof pdfModule === 'function') {
+      const data = await pdfModule(buffer);
+      text = data.text || '';
+      pageCount = data.numpages || 1;
+    } else if (pdfModule?.PDFParse) {
+      const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      const parser = new pdfModule.PDFParse(uint8);
+      const res = await parser.getText();
+      text = typeof res === 'string' ? res : (res?.text || '');
+      pageCount = res?.total || res?.pages?.length || 1;
+    } else {
+      throw new Error('Unsupported pdf-parse module structure');
+    }
+
     const quality = assessTextQuality(text);
 
     return {
       success: quality.isUsable,
       text,
       method: 'pdf_embedded',
-      pageCount: data.numpages,
+      pageCount,
       insufficientText: !quality.isUsable,
       error: quality.isUsable ? undefined : quality.reason,
     };

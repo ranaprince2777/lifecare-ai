@@ -98,41 +98,43 @@ Live query to the Next.js API server (`http://localhost:3000/api/settings/storag
 
 ---
 
-## 5. GitHub Publication & Vercel Deployment Manifest
+## 5. Public GitHub Publication & Vercel Production Deployment
 
-### A. GitHub Repository Verification
-- **Target Repository:** `https://github.com/ranaprince2777/lifecare-ai`
-- **Visibility:** `PRIVATE` (Confirmed via GitHub API / CLI)
-- **Primary Branch:** `master`
-- **Latest Commit:** `9c90a25` (`feat: finalize LifeCare AI deployment`)
-- **Git Author & Commits:** Preserved original 2 baseline commits and branch history.
-- **Sensitive Exclusions:** Verified zero secrets in tree; `.env.local`, uploaded documents, and local databases excluded.
+### A. Public GitHub Repository
+- **Repository URL:** [https://github.com/ranaprince2777/lifecare-ai](https://github.com/ranaprince2777/lifecare-ai)
+- **Visibility:** **`PUBLIC`** (Verified via GitHub API)
+- **Primary Branch:** `master` (Tracking `origin/master`)
+- **Latest Commit:** `b4a2401` (`fix(pipeline): support pdf-parse v2 class API for serverless PDF text extraction`)
+- **Commit History:** Fully preserved; all 5 commits intact.
+- **Security Audit:** 100% clean across entire Git history — zero secrets, zero private medical records.
 
-### B. Vercel Deployment Integration Guide
-To deploy this private repository to Vercel with automated CI/CD:
+### B. Live Vercel Production Deployment
+- **Production URL:** [https://lifecare-ai-xi.vercel.app](https://lifecare-ai-xi.vercel.app)
+- **Deployment Status:** **`READY (Live in Production)`**
+- **Project Dashboard:** `lifecare-ai` on Vercel
+- **Framework:** Next.js 16 (Turbopack, App Router)
+- **Build Override:** `npm install --legacy-peer-deps` (Resolves peer-dependency resolution in Vitest/types)
 
-1. **Open Vercel New Project:** Navigate to [vercel.com/new](https://vercel.com/new).
-2. **Select GitHub Account:** Under "Import Git Repository", select `ranaprince2777`.
-3. **Select Repository:** Locate and click **Import** next to `ranaprince2777/lifecare-ai`.
-4. **Configure Project Settings:**
-   - **Framework Preset:** Next.js
-   - **Root Directory:** `./`
-   - **Build Command:** `npm run build` (default)
-   - **Output Directory:** `.next` (default)
-5. **Environment Variables Configuration (Production):**
-   Add the following variables in the Vercel Dashboard project configuration:
+### C. Live Production Integrations Verified
+1. **Frontend Pages (HTTP 200 OK):**
+   - Landing Page: `https://lifecare-ai-xi.vercel.app/`
+   - Dashboard: `https://lifecare-ai-xi.vercel.app/dashboard`
+   - Records Archive: `https://lifecare-ai-xi.vercel.app/records`
+   - Document Upload: `https://lifecare-ai-xi.vercel.app/upload`
+   - Patient Timeline: `https://lifecare-ai-xi.vercel.app/timeline`
+   - Patient Profile: `https://lifecare-ai-xi.vercel.app/profile`
+   - System Settings: `https://lifecare-ai-xi.vercel.app/settings`
 
-| Environment Variable | Source / Description | Security Exposure |
-| :--- | :--- | :---: |
-| `NEXT_PUBLIC_APP_NAME` | `"LifeCare AI"` | Client-Safe |
-| `NEXT_PUBLIC_DEMO_MODE` | `"true"` | Client-Safe |
-| `MAX_FILE_SIZE_MB` | `"10"` | Client-Safe |
-| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL (`https://*.supabase.co`) | Client-Safe |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Your Supabase anon public API key | Client-Safe |
-| `SUPABASE_SECRET_KEY` | Your Supabase service role secret key | **Server-Only (Secret)** |
-| `GEMINI_API_KEY` | Your Google AI Studio API key | **Server-Only (Secret)** |
-| `MEDIMIND_STORAGE_MODE` | `"auto"` (or `"supabase"`) | Server-Only |
-| `SUPABASE_STORAGE_BUCKET` | `"medical_documents"` | Server-Only |
+2. **Backend API Endpoints (Live):**
+   - `/api/settings/storage`: Mode `supabase`, Provider `supabase_postgres`, Connected to Mumbai instance.
+   - `/api/settings/key`: Confirmed server-side key sovereignty (no secret exposure).
+   - `/api/test-gemini`: Confirmed live handshake with `gemini-3.1-flash-lite` (HTTP 200).
+   - `/api/test-gemini` (Invalid Key): Intercepted with HTTP 403 Forbidden.
+   - `/api/records`: Returns pre-seeded clinical fixtures and live records.
+   - `/api/profile`: Returns patient demographics with ABHA mock ID.
 
-6. **Click Deploy:** Vercel will clone `ranaprince2777/lifecare-ai`, run the Turbopack build, and issue your production HTTPS domain (e.g., `https://lifecare-ai.vercel.app`).
+3. **Cloud Database (Supabase Mumbai):**
+   - Relational tables: 6 public tables verified (`profiles`, `medical_documents`, `extracted_observations`, `medications`, `diagnoses`, `document_summaries`).
+   - Private storage bucket: `medical_documents` active.
+   - RLS security: Unauthorized anonymous requests blocked as expected.
 

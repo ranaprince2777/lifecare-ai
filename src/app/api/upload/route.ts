@@ -8,6 +8,9 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();

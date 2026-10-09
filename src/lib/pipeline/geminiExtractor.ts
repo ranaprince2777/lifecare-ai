@@ -75,8 +75,34 @@ You must respond ONLY with valid JSON conforming to the following structure:
 `;
 
 /**
+ * Utility to wait for milliseconds (used for exponential backoff on 429).
+ */
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Parses and categorizes Gemini API errors into helpful actionable messages.
+ */
+function parseGeminiError(err: unknown): string {
+  if (!(err instanceof Error)) return 'Unknown Gemini API error occurred.';
+  const msg = err.message || '';
+
+  if (msg.includes('429') || /resource[_\s]exhausted|rate[_\s]limit/i.test(msg)) {
+    return 'Gemini API rate limit reached (429). Please wait a moment before trying again.';
+  }
+  if (msg.includes('403') || /api[_\s]key[_\s]invalid|unauthenticated|permission[_\s]denied/i.test(msg)) {
+    return 'Invalid Gemini API key. Please check that your key in .env.local or Settings is valid and has Gemini API enabled in Google AI Studio.';
+  }
+  if (/quota|bill/i.test(msg)) {
+    return 'Gemini API quota exceeded for this key. Please check your usage on Google AI Studio.';
+  }
+
+  return `Gemini API error: ${msg}`;
+}
+
+/**
  * Calls Gemini API to extract structured data and generate summaries.
  * Validates output using Zod and reinforces deterministic reference-range calculations.
+ * Includes retries with exponential backoff on rate-limits (429).
  */
 export async function extractStructuredMedicalData(
   documentText: string,
@@ -87,19 +113,20 @@ export async function extractStructuredMedicalData(
   error?: string;
   isMockFallback?: boolean;
 }> {
-  const apiKey = options?.apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey =
+    options?.apiKey ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY;
 
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  if (!apiKey || apiKey.trim() === '' || apiKey === 'your_gemini_api_key_here') {
     return {
       success: false,
-      error: 'GEMINI_API_KEY is not configured. Please add your API key in Settings or in .env.local to run live AI extraction.',
+      error: 'GEMINI_API_KEY is not configured. Please add your API key in .env.local or in Settings to run live AI extraction.',
     };
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-
-    const userPrompt = `
+  const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
+  const userPrompt = `
 Extract structured medical information and produce an accessible summary from this medical document:
 
 --- DOCUMENT START ---
@@ -109,42 +136,69 @@ ${documentText}
 Please include ${options?.generateHindi !== false ? 'both English and Hindi summaries' : 'an English summary'}.
 `;
 
-    // Try gemini-2.5-flash, fallback to gemini-1.5-flash
-    let rawJsonResponse = '';
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          { role: 'user', parts: [{ text: MEDICAL_SYSTEM_PROMPT }, { text: userPrompt }] }
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.1, // low temperature for medical accuracy
-        },
-      });
-      rawJsonResponse = response.text || '';
-    } catch {
-      // Fallback to gemini-1.5-flash if 2.5 is unavailable
-      const fallbackResponse = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents: [
-          { role: 'user', parts: [{ text: MEDICAL_SYSTEM_PROMPT }, { text: userPrompt }] }
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      });
-      rawJsonResponse = fallbackResponse.text || '';
+  // Models to attempt in order of preference
+  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  let rawJsonResponse = '';
+  let lastError: unknown = null;
+
+  for (const model of models) {
+    let attempts = 0;
+    const maxAttempts = 2;
+
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            { role: 'user', parts: [{ text: MEDICAL_SYSTEM_PROMPT }, { text: userPrompt }] },
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        });
+
+        rawJsonResponse = response.text || '';
+        if (rawJsonResponse) {
+          break; // success
+        }
+      } catch (err: unknown) {
+        lastError = err;
+        const errMsg = err instanceof Error ? err.message : '';
+
+        // If rate limited (429), wait 2.5s and retry once
+        if ((errMsg.includes('429') || /resource[_\s]exhausted/i.test(errMsg)) && attempts < maxAttempts) {
+          await delay(2500);
+          continue;
+        }
+
+        // If auth error or bad key, do not retry further models
+        if (errMsg.includes('403') || /api[_\s]key[_\s]invalid/i.test(errMsg)) {
+          return {
+            success: false,
+            error: parseGeminiError(err),
+          };
+        }
+
+        // Otherwise break loop to attempt next model in chain
+        break;
+      }
     }
 
-    if (!rawJsonResponse) {
-      return {
-        success: false,
-        error: 'Gemini returned an empty response. Please retry.',
-      };
+    if (rawJsonResponse) {
+      break;
     }
+  }
 
+  if (!rawJsonResponse) {
+    return {
+      success: false,
+      error: parseGeminiError(lastError),
+    };
+  }
+
+  try {
     // Clean potential markdown wrappers
     let cleanJson = rawJsonResponse.trim();
     if (cleanJson.startsWith('```json')) {
@@ -180,10 +234,10 @@ Please include ${options?.generateHindi !== false ? 'both English and Hindi summ
       },
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown AI extraction error';
+    const errorMsg = err instanceof Error ? err.message : 'JSON validation failed';
     return {
       success: false,
-      error: `AI extraction error: ${errorMsg}`,
+      error: `Gemini produced unparseable clinical output: ${errorMsg}`,
     };
   }
 }

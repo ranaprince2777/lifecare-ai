@@ -119,5 +119,84 @@ SYNTHETIC TEST DATA — NOT A REAL MEDICAL REPORT
     doc3.close()
     print(f"Created: {scanned_pdf_path}")
 
+    # 4. Discharge Summary Document (Hospital Inpatient Discharge)
+    doc4 = pymupdf.open()
+    page4 = doc4.new_page(width=595, height=842)
+    text_discharge = """SYNTHETIC TEST DATA — NOT A REAL MEDICAL REPORT
+================================================================================
+APEX MULTISPECIALTY HOSPITAL & RESEARCH INSTITUTE
+DEPARTMENT OF CARDIOLOGY & INTERNAL MEDICINE
+DISCHARGE SUMMARY
+
+Patient Name: Rajesh Sharma            Age / Sex: 58 Y / Male
+UHID: APEX-2026-88192                  IPD No: IPD-7721
+Admission Date: 02-Apr-2026            Discharge Date: 05-Apr-2026
+Consultant: Dr. Arvind Deshmukh, MD, DM (Cardiology)
+
+FINAL DIAGNOSES:
+1. Acute Coronary Syndrome (Non-ST Elevation Myocardial Infarction - NSTEMI)
+2. Primary Essential Hypertension (Grade II)
+3. Dyslipidemia
+
+HOSPITAL COURSE & INTERVENTION:
+Patient presented with retrosternal chest discomfort and dyspnea on 02-Apr-2026.
+Coronary angiography performed on 03-Apr-2026 revealed 85% proximal LAD stenosis.
+Successful drug-eluting stent (DES) placement to proximal LAD without complications.
+Hemodynamically stable post-procedure with resolution of angina symptoms.
+
+DISCHARGE MEDICATIONS (Rx):
+1. Tab. Aspirin 75 mg — 1 tablet once daily after lunch x 12 months.
+2. Tab. Clopidogrel 75 mg — 1 tablet once daily after breakfast x 12 months.
+3. Tab. Atorvastatin 40 mg — 1 tablet once daily at bedtime x indefinite.
+4. Tab. Metoprolol Succinate 25 mg — 1 tablet once daily morning x 6 months.
+5. Tab. Ramipril 2.5 mg — 1 tablet once daily morning x indefinite.
+
+FOLLOW-UP & INSTRUCTIONS:
+- Review in Cardiology OPD on 19-Apr-2026 (2 weeks) with repeat ECG.
+- Strict low-salt (< 3g/day), low-cholesterol diet. Avoid strenuous exertion.
+- Immediate emergency consultation if recurrent chest pain, syncope, or breathlessness occurs.
+================================================================================
+Verified by: Dr. Arvind Deshmukh, MD, DM | Resident: Dr. Sneha Patil, MBBS
+SYNTHETIC TEST DATA — NOT A REAL MEDICAL REPORT
+"""
+    page4.insert_text(pymupdf.Point(40, 45), text_discharge, fontsize=9.5, fontname="courier")
+    discharge_pdf_path = os.path.join(fixtures_dir, "synthetic_discharge_summary.pdf")
+    doc4.save(discharge_pdf_path)
+    doc4.close()
+    print(f"Created: {discharge_pdf_path}")
+
+    # 5. Ambiguous & Incomplete Report (Missing reference ranges, missing clinician, ambiguous values)
+    doc5 = pymupdf.open()
+    page5 = doc5.new_page(width=595, height=842)
+    text_ambiguous = """SYNTHETIC TEST DATA — NOT A REAL MEDICAL REPORT
+================================================================================
+COMMUNITY HEALTH DIAGNOSTIC POST
+PRELIMINARY TEST SLIP (PARTIAL / UNVERIFIED)
+
+Patient: Anita Roy                     Age: 38
+Date: Unknown / Illegible (04-?-2026)  Doctor: Unspecified / Walk-in
+
+INVESTIGATION                   RESULT       UNIT         REFERENCE RANGE
+--------------------------------------------------------------------------------
+Blood Glucose (Random)          142          mg/dL        [NOT PROVIDED]
+Urine Protein                   Trace        --           [NOT SPECIFIED]
+Serum Calcium                   Borderline   --           [REFERENCE MISSING]
+Hemoglobin                      11.2         g/dL         12.0 - 15.0 (LOW)
+Thyroid Stimulating Hormone     Pending      uIU/mL       [AWAITING LAB BATCH]
+--------------------------------------------------------------------------------
+NOTES:
+- Specimen hemolyzed slightly. Sample stability uncertain.
+- Doctor signature missing. Patient requested preliminary photocopy.
+- Serum calcium marked qualitatively as 'Borderline' without numeric assay.
+================================================================================
+SYNTHETIC TEST DATA — NOT A REAL MEDICAL REPORT
+"""
+    page5.insert_text(pymupdf.Point(40, 50), text_ambiguous, fontsize=10, fontname="courier")
+    ambiguous_pdf_path = os.path.join(fixtures_dir, "synthetic_ambiguous_incomplete_report.pdf")
+    doc5.save(ambiguous_pdf_path)
+    doc5.close()
+    print(f"Created: {ambiguous_pdf_path}")
+
 if __name__ == "__main__":
     generate_fixtures()
+

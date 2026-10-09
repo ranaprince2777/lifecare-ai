@@ -11,9 +11,11 @@ import {
   ArrowRight,
   ExternalLink,
   CheckCircle2,
+  TrendingUp,
 } from 'lucide-react';
 import { MedicalDocumentRecord } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
+import LabTrendsComparison from '@/components/LabTrendsComparison';
 
 export default function TimelinePage() {
   const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
@@ -21,6 +23,8 @@ export default function TimelinePage() {
   const [selectedType, setSelectedType] = useState<string>('All');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [activeView, setActiveView] = useState<'timeline' | 'trends'>('timeline');
 
   useEffect(() => {
     async function fetchTimeline() {
@@ -63,7 +67,7 @@ export default function TimelinePage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Page Title */}
+      {/* Page Title & View Switch */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
@@ -75,16 +79,46 @@ export default function TimelinePage() {
           </p>
         </div>
 
-        {/* Sort Order Toggle */}
-        <div className="flex items-center gap-2">
+        {/* View Mode Toggle: Events vs Trends */}
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button
-            onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
+            onClick={() => setActiveView('timeline')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+              activeView === 'timeline'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            Sort: {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
+            <Clock className="w-3.5 h-3.5" />
+            <span>Event Stream</span>
+          </button>
+          <button
+            onClick={() => setActiveView('trends')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+              activeView === 'trends'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-teal-600" />
+            <span>Lab Trends ({records.flatMap(r => r.observations).length})</span>
           </button>
         </div>
       </div>
+
+      {activeView === 'trends' ? (
+        <LabTrendsComparison records={records} />
+      ) : (
+        <>
+          {/* Sort Order Toggle & Filter Row */}
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+              className="px-3.5 py-1.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
+            >
+              Sort: {sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}
+            </button>
+          </div>
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -240,6 +274,8 @@ export default function TimelinePage() {
           })}
         </div>
       )}
-    </div>
+    </>
+  )}
+</div>
   );
 }

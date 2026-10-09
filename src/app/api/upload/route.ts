@@ -9,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 
 export const maxDuration = 60;
-export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest) {
 
     // Save document file locally for preview or fallback (safe in serverless read-only filesystems)
     const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    let publicUrl = `/uploads/${safeFileName}`;
+    const publicUrl = `/uploads/${safeFileName}`;
     try {
       const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
       if (!fs.existsSync(uploadsDir)) {

@@ -8,6 +8,10 @@ import {
   Save,
   CheckCircle2,
   Info,
+  RefreshCw,
+  Copy,
+  Check,
+  ShieldCheck,
 } from 'lucide-react';
 import { PatientProfile } from '@/lib/types/medical';
 
@@ -16,6 +20,17 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [copiedAbha, setCopiedAbha] = useState(false);
+
+  const generateMockAbha = () => {
+    if (!profile) return;
+    const r1 = Math.floor(10 + Math.random() * 89);
+    const r2 = Math.floor(1000 + Math.random() * 9000);
+    const r3 = Math.floor(1000 + Math.random() * 9000);
+    const r4 = Math.floor(1000 + Math.random() * 9000);
+    const newId = `${r1}-${r2}-${r3}-${r4}`;
+    setProfile({ ...profile, mockAbhaId: newId });
+  };
 
   useEffect(() => {
     async function fetchProfile() {
@@ -109,15 +124,55 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Mock ABHA Address / ID
-              </label>
-              <input
-                type="text"
-                value={profile.mockAbhaId}
-                onChange={(e) => setProfile({ ...profile, mockAbhaId: e.target.value })}
-                className="w-full text-xs font-mono px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Mock ABHA Health ID (ABDM Sandbox)
+                </label>
+                <button
+                  type="button"
+                  onClick={generateMockAbha}
+                  className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 flex items-center gap-1 transition"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Generate New</span>
+                </button>
+              </div>
+
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={profile.mockAbhaId}
+                  onChange={(e) => setProfile({ ...profile, mockAbhaId: e.target.value })}
+                  className="w-full text-xs font-mono px-3 py-2 pr-16 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50 font-bold"
+                  placeholder="XX-XXXX-XXXX-XXXX"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(profile.mockAbhaId);
+                    setCopiedAbha(true);
+                    setTimeout(() => setCopiedAbha(false), 2000);
+                  }}
+                  className="absolute right-2 px-2 py-1 text-[10px] font-semibold rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center gap-1 transition"
+                  title="Copy Mock ABHA"
+                >
+                  {copiedAbha ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedAbha ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+
+              <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                {/^\d{2}-\d{4}-\d{4}-\d{4}$/.test(profile.mockAbhaId.trim()) ? (
+                  <span className="text-emerald-700 font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Valid 14-digit ABDM Mock Format</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-700 font-medium">
+                    Format: 14 digits (e.g. 14-8892-4102-7719)
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>

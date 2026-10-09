@@ -6,7 +6,8 @@ async function runComprehensiveVerification() {
   console.log('LifeCare AI — Comprehensive UI Routes & API Handlers Audit');
   console.log('================================================================\n');
 
-  const BASE_URL = 'http://localhost:3000';
+  const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
+  console.log(`Target URL: ${BASE_URL}\n`);
   let passed = 0;
   let failed = 0;
 
@@ -202,9 +203,13 @@ async function runComprehensiveVerification() {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(10.5 * 1024 * 1024)], { type: 'application/pdf' }), 'large.pdf');
     const res = await fetch(`${BASE_URL}/api/upload`, { method: 'POST', body: form });
-    const json = await res.json();
-    const isOk = res.status === 400 && json.error?.includes('exceeds maximum allowed limit');
-    recordResult('Upload Security: Reject >10MB file', isOk, `Status: ${res.status}, Error: "${json.error}"`);
+    if (res.status === 413) {
+      recordResult('Upload Security: Reject oversized file (>10MB)', true, 'HTTP 413 Payload Too Large enforced by platform gateway');
+    } else {
+      const json = await res.json();
+      const isOk = res.status === 400 && json.error?.includes('exceeds maximum allowed limit');
+      recordResult('Upload Security: Reject >10MB file', isOk, `Status: ${res.status}, Error: "${json.error}"`);
+    }
   } catch (err: unknown) {
     recordResult('Upload Security: Reject >10MB file', false, err instanceof Error ? err.message : 'Failed');
   }

@@ -126,7 +126,9 @@ async function extractWithPdfParse(buffer: Buffer): Promise<TextExtractionResult
       text = data.text || '';
       pageCount = data.numpages || 1;
     } else if (pdfModule?.PDFParse) {
-      const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      // Clone buffer to prevent PDFParse worker from detaching the original ArrayBuffer
+      const bufferCopy = Buffer.from(buffer);
+      const uint8 = new Uint8Array(bufferCopy.buffer, bufferCopy.byteOffset, bufferCopy.byteLength);
       const parser = new pdfModule.PDFParse(uint8);
       const res = await parser.getText();
       text = typeof res === 'string' ? res : (res?.text || '');

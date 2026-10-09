@@ -16,6 +16,7 @@ import {
 import { MedicalDocumentRecord, PatientProfile } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 import StatusBadge from '@/components/StatusBadge';
+import LabTrendsComparison from '@/components/LabTrendsComparison';
 
 export default function DashboardPage() {
   const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
@@ -216,6 +217,9 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Longitudinal Lab Trends & Historical Comparison */}
+      <LabTrendsComparison records={records} />
 
       {/* Two Column Layout: Recent Documents & Active Regimen */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

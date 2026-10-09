@@ -42,15 +42,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Save document file locally for preview
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    // Save document file locally for preview or fallback (safe in serverless read-only filesystems)
     const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    const filePath = path.join(uploadsDir, safeFileName);
-    fs.writeFileSync(filePath, buffer);
-    const publicUrl = `/uploads/${safeFileName}`;
+    let publicUrl = `/uploads/${safeFileName}`;
+    try {
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, safeFileName);
+      fs.writeFileSync(filePath, buffer);
+    } catch {
+      // In read-only serverless filesystems (e.g. Vercel), fallback to /tmp
+      try {
+        const tmpPath = path.join('/tmp', safeFileName);
+        fs.writeFileSync(tmpPath, buffer);
+      } catch {
+        // Continue gracefully
+      }
+    }
 
     // 3. Extract text / OCR
     const extractionResult = await extractDocumentText(buffer, validation.mimeType!, file.name);
@@ -131,7 +141,7 @@ export async function POST(req: NextRequest) {
         keyFindings: payload.keyFindings || [],
         abnormalHighlights: payload.abnormalHighlights || [],
         doctorQuestions: payload.doctorQuestions || [],
-        modelUsed: 'gemini-2.5-flash',
+        modelUsed: 'gemini-3.1-flash-lite',
       },
     };
 

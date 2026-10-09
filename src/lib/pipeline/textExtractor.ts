@@ -12,6 +12,7 @@ export interface TextExtractionResult {
   confidence?: number;
   error?: string;
   insufficientText?: boolean;
+  pageImageBase64?: string;
 }
 
 /**
@@ -72,6 +73,17 @@ async function extractWithPyMuPDF(filePath: string): Promise<TextExtractionResul
               pageCount: parsed.pageCount,
               insufficientText: !quality.isUsable,
               error: quality.isUsable ? undefined : quality.reason,
+              pageImageBase64: parsed.pageImageBase64,
+            });
+          }
+          if (parsed.isScanned && parsed.pageImageBase64) {
+            return resolve({
+              success: false,
+              text: '',
+              method: 'pymupdf',
+              pageCount: parsed.pageCount,
+              insufficientText: true,
+              pageImageBase64: parsed.pageImageBase64,
             });
           }
         } catch {
@@ -135,7 +147,18 @@ async function extractWithPdfParse(buffer: Buffer): Promise<TextExtractionResult
 async function extractImageWithTesseract(buffer: Buffer): Promise<TextExtractionResult> {
   try {
     const { createWorker } = await import('tesseract.js');
-    const worker = await createWorker('eng');
+    const workerPath = path.join(
+      process.cwd(),
+      'node_modules',
+      'tesseract.js',
+      'src',
+      'worker-script',
+      'node',
+      'index.js'
+    );
+    const worker = await createWorker('eng', 1, {
+      workerPath: fs.existsSync(workerPath) ? workerPath : undefined,
+    });
     const ret = await worker.recognize(buffer);
     await worker.terminate();
 
@@ -180,7 +203,7 @@ export async function extractDocumentText(
     }
 
     // 2. Second attempt via PyMuPDF with temporary file
-    const tempFilePath = path.join(os.tmpdir(), `medimind_${Date.now()}_${path.basename(originalFileName)}`);
+    const tempFilePath = path.join(os.tmpdir(), `lifecare_${Date.now()}_${path.basename(originalFileName)}`);
     try {
       await fs.promises.writeFile(tempFilePath, buffer);
       const pyResult = await extractWithPyMuPDF(tempFilePath);
@@ -189,6 +212,23 @@ export async function extractDocumentText(
       }
       if (pyResult.text && pyResult.text.trim().length > 0) {
         return pyResult;
+      }
+
+      // 3. Third attempt: Scanned PDF automatic OCR
+      if (pyResult.pageImageBase64) {
+        try {
+          const imgBuffer = Buffer.from(pyResult.pageImageBase64, 'base64');
+          const ocrResult = await extractImageWithTesseract(imgBuffer);
+          if (ocrResult.success) {
+            return {
+              ...ocrResult,
+              method: 'ocr_tesseract',
+              pageCount: pyResult.pageCount || 1,
+            };
+          }
+        } catch {
+          // fall through to error notice
+        }
       }
     } catch {
       // ignore temp file write error

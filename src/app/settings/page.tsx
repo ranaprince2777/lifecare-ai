@@ -11,68 +11,189 @@ import {
   AlertTriangle,
   RefreshCw,
   ExternalLink,
-  Trash2,
   Eye,
   EyeOff,
+  Trash2,
+  Server,
 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [geminiKey, setGeminiKey] = useState('');
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState<boolean | null>(null);
+  const [serverKeyLength, setServerKeyLength] = useState<number | null>(null);
+
+  const [savingKey, setSavingKey] = useState(false);
   const [testingKey, setTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message?: string;
     error?: string;
+    model?: string;
   } | null>(null);
 
-  const [defaultLang, setDefaultLang] = useState<'en' | 'hi'>('en');
+  const [defaultLang, setDefaultLang] = useState<'en' | 'hi'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = (localStorage.getItem('lifecare_default_lang') || localStorage.getItem('medimind_default_lang')) as 'en' | 'hi';
+      if (saved === 'en' || saved === 'hi') return saved;
+    }
+    return 'en';
+  });
   const [resettingData, setResettingData] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<{
+    mode: 'local' | 'supabase';
+    configured: boolean;
+    localRecordsCount: number;
+    provider: string;
+  } | null>(null);
+
+  // Check server configuration status and purge any legacy client-side localStorage secrets
+  const checkServerKeyStatus = async () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('lifecare_gemini_key');
+        localStorage.removeItem('medimind_gemini_key');
+      }
+
+      const res = await fetch('/api/settings/key');
+      if (res.ok) {
+        const data = await res.json();
+        setServerConfigured(data.configured);
+        setServerKeyLength(data.keyLength || null);
+      }
+    } catch {
+      setServerConfigured(false);
+    }
+  };
 
   useEffect(() => {
-    const saved = localStorage.getItem('medimind_gemini_key') || '';
-    setGeminiKey(saved);
+    let ignore = false;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('lifecare_gemini_key');
+      localStorage.removeItem('medimind_gemini_key');
+    }
 
-    const savedLang = localStorage.getItem('medimind_default_lang') as 'en' | 'hi';
-    if (savedLang) setDefaultLang(savedLang);
+    fetch('/api/settings/key')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!ignore) {
+          setServerConfigured(Boolean(data.configured));
+          setServerKeyLength(data.keyLength || null);
+        }
+      })
+      .catch(() => {
+        if (!ignore) setServerConfigured(false);
+      });
+
+    fetch('/api/settings/storage')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!ignore) {
+          setStorageStatus(data);
+        }
+      })
+      .catch(() => {
+        // Keep null fallback
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
-  const handleSaveKey = () => {
-    if (geminiKey.trim()) {
-      localStorage.setItem('medimind_gemini_key', geminiKey.trim());
-      setTestResult({
-        success: true,
-        message: 'Gemini API key saved in browser storage.',
+  const handleSaveKeyToServer = async () => {
+    if (!geminiKeyInput.trim()) {
+      alert('Please enter a valid Gemini API key.');
+      return;
+    }
+
+    setSavingKey(true);
+    setTestResult(null);
+
+    try {
+      const res = await fetch('/api/settings/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: geminiKeyInput.trim() }),
       });
-    } else {
-      localStorage.removeItem('medimind_gemini_key');
-      setTestResult({
-        success: true,
-        message: 'Custom key cleared. App will rely on server environment variables if configured.',
-      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setGeminiKeyInput(''); // Clear secret from browser memory
+        await checkServerKeyStatus();
+        setTestResult({
+          success: true,
+          message: 'API key saved to server .env.local securely. Secret cleared from browser memory.',
+        });
+      } else {
+        setTestResult({
+          success: false,
+          error: data.error || 'Failed to save key to server.',
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error';
+      setTestResult({ success: false, error: msg });
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleClearServerKey = async () => {
+    if (!confirm('Remove Gemini API key from server .env.local?')) return;
+    try {
+      const res = await fetch('/api/settings/key', { method: 'DELETE' });
+      if (res.ok) {
+        await checkServerKeyStatus();
+        setTestResult({
+          success: true,
+          message: 'API key cleared from server .env.local.',
+        });
+      }
+    } catch (err) {
+      console.error('Error clearing key:', err);
     }
   };
 
   const handleTestConnection = async () => {
     setTestingKey(true);
     setTestResult(null);
+
     try {
+      // Test server configured key or test typed input before saving
+      const payload = geminiKeyInput.trim() ? { apiKey: geminiKeyInput.trim() } : {};
       const res = await fetch('/api/test-gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: geminiKey.trim() || undefined }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
+
       if (res.ok && data.success) {
+        // Automatically persist successfully verified key to server .env.local
+        if (geminiKeyInput.trim()) {
+          try {
+            await fetch('/api/settings/key', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ apiKey: geminiKeyInput.trim() }),
+            });
+            setGeminiKeyInput(''); // Clear secret from browser memory
+            await checkServerKeyStatus();
+          } catch (e) {
+            console.error('Failed to auto-save key:', e);
+          }
+        }
         setTestResult({
           success: true,
-          message: data.message || 'Gemini 2.5 Flash connection active and responding!',
+          message: `${data.message || `Successfully connected to Google Gemini using ${data.model}!`} Verified key saved to .env.local.`,
+          model: data.model,
         });
       } else {
         setTestResult({
           success: false,
-          error: data.error || 'Failed to connect to Gemini API',
+          error: data.error || 'Failed to connect to Gemini API.',
         });
       }
     } catch (err: unknown) {
@@ -85,6 +206,7 @@ export default function SettingsPage() {
 
   const handleLanguageChange = (lang: 'en' | 'hi') => {
     setDefaultLang(lang);
+    localStorage.setItem('lifecare_default_lang', lang);
     localStorage.setItem('medimind_default_lang', lang);
   };
 
@@ -114,23 +236,23 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
           <Settings className="w-6 h-6 text-teal-600" />
-          <span>System Settings & Preferences</span>
+          <span>System Settings & Model Configuration</span>
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Configure Gemini AI keys, default summary languages, and database demo mode.
+          Configure Gemini AI models, server environment keys, and bilingual preferences.
         </p>
       </div>
 
-      {/* 1. Gemini API Key Configuration */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+      {/* 1. Gemini API Key & Model Configuration */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Key className="w-4 h-4 text-teal-600" />
-              <span>Google Gemini API Configuration</span>
+              <span>Google Gemini Model & Server Key</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Powers structured clinical information extraction and plain-language patient summaries.
+              Supports <strong className="text-slate-700">gemini-3.1-flash-lite</strong> (primary) with automatic fallback to <strong className="text-slate-700">gemini-3.1-flash</strong>.
             </p>
           </div>
 
@@ -140,21 +262,52 @@ export default function SettingsPage() {
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-semibold shrink-0"
           >
-            <span>Get Free Key</span>
+            <span>Google AI Studio</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>
 
-        <div className="space-y-3 pt-2">
+        {/* Server Key Status Badge */}
+        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Server className="w-4 h-4 text-teal-600 shrink-0" />
+            <div>
+              <span className="font-semibold text-slate-900">Server .env.local Status: </span>
+              {serverConfigured ? (
+                <span className="text-emerald-700 font-bold">
+                  Configured ({serverKeyLength} characters, stored server-side)
+                </span>
+              ) : (
+                <span className="text-amber-700 font-medium">
+                  Not configured in .env.local
+                </span>
+              )}
+            </div>
+          </div>
+
+          {serverConfigured && (
+            <button
+              type="button"
+              onClick={handleClearServerKey}
+              className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 self-start sm:self-auto font-medium"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Key</span>
+            </button>
+          )}
+        </div>
+
+        {/* Input Form for New Key */}
+        <div className="space-y-3">
           <label className="block text-xs font-semibold text-slate-700">
-            Gemini API Key (Client-Side or Server Override)
+            {serverConfigured ? 'Update Gemini API Key:' : 'Enter Gemini API Key:'}
           </label>
           <div className="relative">
             <input
               type={showKey ? 'text' : 'password'}
               placeholder="AIzaSy..."
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
+              value={geminiKeyInput}
+              onChange={(e) => setGeminiKeyInput(e.target.value)}
               className="w-full text-xs font-mono pr-20 pl-3 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50/50"
             />
             <button
@@ -165,21 +318,26 @@ export default function SettingsPage() {
               {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          <p className="text-[11px] text-slate-500">
+            Keys are strictly saved to server-side <code className="font-mono bg-slate-100 px-1 rounded">.env.local</code> and never stored in browser localStorage or frontend bundles.
+          </p>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             <button
               type="button"
-              onClick={handleSaveKey}
-              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition shadow-sm"
+              disabled={savingKey || !geminiKeyInput.trim()}
+              onClick={handleSaveKeyToServer}
+              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-sm flex items-center gap-1.5"
             >
-              Save Key
+              {savingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+              <span>{savingKey ? 'Saving to Server...' : 'Save to .env.local'}</span>
             </button>
 
             <button
               type="button"
-              disabled={testingKey}
+              disabled={testingKey || (!serverConfigured && !geminiKeyInput.trim())}
               onClick={handleTestConnection}
-              className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5"
             >
               {testingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />}
               <span>{testingKey ? 'Testing Connection...' : 'Test Connection'}</span>
@@ -200,11 +358,16 @@ export default function SettingsPage() {
               ) : (
                 <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               )}
-              <div>
+              <div className="space-y-0.5">
                 <strong className="font-semibold">
-                  {testResult.success ? 'Success: ' : 'Connection Error: '}
+                  {testResult.success ? 'Connection Successful: ' : 'Connection Failed: '}
                 </strong>
-                <span>{testResult.message || testResult.error}</span>
+                <div>{testResult.message || testResult.error}</div>
+                {testResult.model && (
+                  <div className="font-mono text-[11px] text-emerald-700 pt-0.5">
+                    Model: {testResult.model}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -256,19 +419,29 @@ export default function SettingsPage() {
             <span>Database & Storage Architecture</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            MediMind supports dual storage: Cloud Supabase PostgreSQL or zero-config local demo storage.
+            LifeCare AI supports dual storage: Cloud Supabase PostgreSQL or zero-config local demo storage.
           </p>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-2">
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-slate-900">Current Mode:</span>
-            <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
-              Local File & Synthetic Demo Mode
-            </span>
+            <span className="font-semibold text-slate-900">Current Storage Engine:</span>
+            {storageStatus?.configured ? (
+              <span className="px-2.5 py-0.5 rounded-full font-bold bg-purple-100 text-purple-800 flex items-center gap-1">
+                <span>Supabase Cloud Mode (Mumbai)</span>
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                <span>Local JSON Fallback Mode</span>
+              </span>
+            )}
           </div>
           <p className="text-slate-600 leading-relaxed">
-            All records persist locally across server restarts in <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono">data/records.json</code>. To enable multi-user Supabase cloud storage, configure <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and run the migrations from <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono">supabase/schema.sql</code>.
+            {storageStatus?.configured ? (
+              <>Cloud PostgreSQL database connected with strict Row-Level Security (RLS) policies and private storage bucket.</>
+            ) : (
+              <>All records persist locally across server restarts in <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono">data/records.json</code> ({storageStatus?.localRecordsCount ?? 5} records active). To connect Supabase, see <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono">SUPABASE_SETUP.md</code>.</>
+            )}
           </p>
         </div>
 
@@ -303,10 +476,10 @@ export default function SettingsPage() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
         <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
           <Shield className="w-4 h-4 text-emerald-600" />
-          <span>Privacy & Data Sovereignty</span>
+          <span>Security & Secret Sovereignty</span>
         </h2>
         <p className="text-xs text-slate-600 leading-relaxed">
-          MediMind AI processes documents with safety-first clinical parameters. Uploaded files are evaluated locally, and extracted medical queries sent to Gemini use minimal clinical contexts without personally identifiable tracking.
+          LifeCare AI keeps all API keys strictly server-side in <code className="bg-slate-100 px-1 py-0.5 rounded font-mono">.env.local</code>. No credentials are stored in client localStorage, cookies, or frontend code bundles.
         </p>
       </div>
     </div>

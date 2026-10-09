@@ -98,6 +98,7 @@ export async function POST(
         keyFindings: p.keyFindings || [],
         abnormalHighlights: p.abnormalHighlights || [],
         doctorQuestions: p.doctorQuestions || [],
+        modelUsed: 'gemini-3.1-flash-lite',
       };
       record.processingStatus = 'completed';
       record.errorMessage = null;

@@ -197,7 +197,7 @@ End of Report. Verified by Dr. M. K. Sen, MD (Pathology).`,
         'Do you recommend starting a cholesterol-lowering medication such as a statin for the elevated LDL?',
         'When should I repeat this metabolic panel to monitor these trends?',
       ],
-      modelUsed: 'gemini-2.5-flash',
+      modelUsed: 'gemini-3.1-flash-lite',
     },
   },
 
@@ -339,7 +339,7 @@ Advice:
         'What symptoms should prompt an earlier blood pressure or blood sugar check?',
         'Do I need periodic liver enzyme monitoring while on Atorvastatin?',
       ],
-      modelUsed: 'gemini-2.5-flash',
+      modelUsed: 'gemini-3.1-flash-lite',
     },
   },
 
@@ -455,7 +455,7 @@ IMPRESSION:
         'Do I need liver function blood tests (SGOT/SGPT) to check for inflammation?',
         'When should a follow-up ultrasound be scheduled to monitor liver size?',
       ],
-      modelUsed: 'gemini-2.5-flash',
+      modelUsed: 'gemini-3.1-flash-lite',
     },
   },
 
@@ -551,7 +551,7 @@ DISCHARGE CONDITION: Stable, afebrile, tolerating oral diet.`,
       doctorQuestions: [
         'Since this episode resolved, are any ongoing digestive precautions necessary?',
       ],
-      modelUsed: 'gemini-2.5-flash',
+      modelUsed: 'gemini-3.1-flash-lite',
     },
   },
 ];

@@ -4,7 +4,7 @@ import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
-  title: 'MediMind AI — AI-Powered Personal Health Copilot',
+  title: 'LifeCare AI — AI-Powered Personal Health Copilot',
   description:
     'Transform prescriptions, lab reports, diagnostics, and discharge summaries into plain-language summaries, structured observations, and a unified chronological medical timeline.',
 };

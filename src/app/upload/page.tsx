@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   UploadCloud,
-  FileText,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -14,7 +13,6 @@ import {
   Languages,
   Sparkles,
   Key,
-  X,
 } from 'lucide-react';
 import { MedicalDocumentRecord } from '@/lib/types/medical';
 import ObservationsTable from '@/components/ObservationsTable';
@@ -35,15 +33,20 @@ export default function UploadPage() {
   const [duplicateDocId, setDuplicateDocId] = useState<string | null>(null);
   const [processedRecord, setProcessedRecord] = useState<MedicalDocumentRecord | null>(null);
   const [aiWarning, setAiWarning] = useState<string | null>(null);
-  const [customApiKey, setCustomApiKey] = useState('');
-  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [serverKeyConfigured, setServerKeyConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Check if user previously saved Gemini API key in localStorage
-    const savedKey = localStorage.getItem('medimind_gemini_key');
-    if (savedKey) {
-      setCustomApiKey(savedKey);
+    // Purge legacy client-side storage for security
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('lifecare_gemini_key');
+      localStorage.removeItem('medimind_gemini_key');
     }
+
+    // Check server key configuration status
+    fetch('/api/settings/key')
+      .then((res) => res.json())
+      .then((data) => setServerKeyConfigured(Boolean(data?.configured)))
+      .catch(() => setServerKeyConfigured(false));
   }, []);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -102,9 +105,6 @@ export default function UploadPage() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('generateHindi', generateHindi ? 'true' : 'false');
-      if (customApiKey.trim()) {
-        formData.append('apiKey', customApiKey.trim());
-      }
 
       setStep('extracting');
       setStatusMessage(
@@ -233,46 +233,18 @@ export default function UploadPage() {
               <span>Generate bilingual summary (English & Hindi)</span>
             </label>
 
-            <button
-              type="button"
-              onClick={() => setShowKeyInput(!showKeyInput)}
-              className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5 self-start sm:self-auto font-medium"
+            <a
+              href="/settings"
+              className="text-xs text-slate-600 hover:text-teal-700 flex items-center gap-1.5 self-start sm:self-auto font-medium"
             >
               <Key className="w-3.5 h-3.5 text-teal-600" />
-              <span>{customApiKey ? 'API Key Configured ✓' : 'Custom Gemini Key (Optional)'}</span>
-            </button>
+              <span>
+                {serverKeyConfigured
+                  ? 'Gemini API Active (Server) ✓'
+                  : 'Configure Gemini Key in Settings →'}
+              </span>
+            </a>
           </div>
-
-          {/* Optional inline API key toggle */}
-          {showKeyInput && (
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-800">
-                  Google Gemini API Key (Optional Override):
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowKeyInput(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <input
-                type="password"
-                placeholder="AIzaSy..."
-                value={customApiKey}
-                onChange={(e) => {
-                  setCustomApiKey(e.target.value);
-                  localStorage.setItem('medimind_gemini_key', e.target.value);
-                }}
-                className="w-full text-xs font-mono px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
-              />
-              <p className="text-[11px] text-slate-500">
-                You can also configure this once in the <a href="/settings" className="text-teal-600 underline">Settings</a> page.
-              </p>
-            </div>
-          )}
 
           {/* Error Banner */}
           {errorMessage && (

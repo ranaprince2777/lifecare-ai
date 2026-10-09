@@ -1,4 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
+import path from 'path';
 import {
   MedicalExtractionPayload,
   MedicalExtractionPayloadSchema,
@@ -99,6 +101,25 @@ function parseGeminiError(err: unknown): string {
   return `Gemini API error: ${msg}`;
 }
 
+function getEffectiveKey(providedKey?: string): string | undefined {
+  if (providedKey && providedKey.trim()) return providedKey.trim();
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) return process.env.GEMINI_API_KEY.trim();
+  if (process.env.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY.trim()) return process.env.GOOGLE_API_KEY.trim();
+  try {
+    const envPath = path.join(process.cwd(), '.env.local');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf-8');
+      const match = content.match(/^GEMINI_API_KEY=(.*)$/m);
+      if (match && match[1].trim() && match[1].trim() !== 'your_gemini_api_key_here') {
+        return match[1].trim();
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
 /**
  * Calls Gemini API to extract structured data and generate summaries.
  * Validates output using Zod and reinforces deterministic reference-range calculations.
@@ -113,12 +134,9 @@ export async function extractStructuredMedicalData(
   error?: string;
   isMockFallback?: boolean;
 }> {
-  const apiKey =
-    options?.apiKey ||
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY;
+  const apiKey = getEffectiveKey(options?.apiKey);
 
-  if (!apiKey || apiKey.trim() === '' || apiKey === 'your_gemini_api_key_here') {
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     return {
       success: false,
       error: 'GEMINI_API_KEY is not configured. Please add your API key in .env.local or in Settings to run live AI extraction.',
@@ -136,12 +154,19 @@ ${documentText}
 Please include ${options?.generateHindi !== false ? 'both English and Hindi summaries' : 'an English summary'}.
 `;
 
-  // Models to attempt in order of preference
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  // Models to attempt in order of preference: prefer gemini-3.1-flash-lite, fallback to 3.1-flash, 3.5, 3.8
+  const models = [
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+  ];
   let rawJsonResponse = '';
   let lastError: unknown = null;
 
-  for (const model of models) {
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
     let attempts = 0;
     const maxAttempts = 2;
 
@@ -181,7 +206,16 @@ Please include ${options?.generateHindi !== false ? 'both English and Hindi summ
           };
         }
 
-        // Otherwise break loop to attempt next model in chain
+        // Check if error message suggests a specific alternative model
+        const suggestedMatch = errMsg.match(/(?:suggesting|try|use)\s+['`"]?(gemini-[a-z0-9.-]+)['`"]?/i);
+        if (suggestedMatch && suggestedMatch[1]) {
+          const suggestedModel = suggestedMatch[1];
+          if (!models.includes(suggestedModel)) {
+            models.splice(i + 1, 0, suggestedModel);
+          }
+        }
+
+        // Otherwise break attempt loop to try next model in chain
         break;
       }
     }

@@ -1,8 +1,8 @@
-# MediMind AI — AI-Powered Personal Health Copilot
+# LifeCare AI — AI-Powered Personal Health Copilot
 
 > Built for the **Altrix Labs Hackathon** problem statement.
 
-MediMind AI helps individuals upload and organize medical documents (prescriptions, laboratory reports, diagnostic imaging, and discharge summaries) and understand the information in those documents through carefully worded, plain-language explanations.
+LifeCare AI helps individuals upload and organize medical documents (prescriptions, laboratory reports, diagnostic imaging, and discharge summaries) and understand the information in those documents through carefully worded, plain-language explanations.
 
 ---
 
@@ -114,7 +114,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 🩺 Demo Datasets Included
 
-MediMind AI comes pre-seeded with 4 realistic clinical fixtures:
+LifeCare AI comes pre-seeded with 4 realistic clinical fixtures:
 1. **Comprehensive Metabolic & Lipid Panel** (Quest Diagnostics): Glucose 142 mg/dL [High], HbA1c 6.8% [High], Total Cholesterol 228 mg/dL [High], Triglycerides 190 mg/dL [High], LDL 148 mg/dL [High], Creatinine 0.95 mg/dL [Normal].
 2. **Prescription** (Apollo Clinic, Dr. Arvind Sharma): Metformin 500mg BID, Telmisartan 40mg OD, Atorvastatin 20mg OD at bedtime.
 3. **Ultrasound Whole Abdomen** (Max Healthcare Radiology): Mild hepatomegaly (15.6 cm) with Grade 1 Fatty Liver (Steatosis), normal gallbladder, kidneys, spleen.

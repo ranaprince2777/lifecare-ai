@@ -26,7 +26,7 @@ function loadEnvLocal() {
 
 async function runGeminiIntegrationTest() {
   console.log('====================================================');
-  console.log('MediMind AI — Google Gemini API Integration Test');
+  console.log('LifeCare AI — Google Gemini API Integration Test');
   console.log('====================================================\n');
 
   loadEnvLocal();

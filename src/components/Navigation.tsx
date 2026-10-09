@@ -46,7 +46,7 @@ export default function Navigation() {
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-lg text-slate-900 tracking-tight">MediMind</span>
+                  <span className="font-bold text-lg text-slate-900 tracking-tight">LifeCare</span>
                   <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200">
                     AI
                   </span>

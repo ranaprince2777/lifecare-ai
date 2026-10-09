@@ -83,7 +83,7 @@ export const DocumentSummarySchema = z.object({
   keyFindings: z.array(z.string()).default([]),
   abnormalHighlights: z.array(z.string()).default([]),
   doctorQuestions: z.array(z.string()).default([]),
-  modelUsed: z.string().default('gemini-2.5-flash'),
+  modelUsed: z.string().default('gemini-3.1-flash-lite'),
 });
 
 export type DocumentSummary = z.infer<typeof DocumentSummarySchema>;

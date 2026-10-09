@@ -1,5 +1,5 @@
 {
-  "name": "medimind-ai",
+  "name": "lifecare-ai",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:gemini": "tsx scripts/test_gemini_integration.ts"
+    "test:gemini": "tsx scripts/test_gemini_integration.ts",
+    "test:e2e": "tsx scripts/verify_all_pages_and_routes.ts",
+    "test:all": "vitest run && tsx scripts/verify_all_pages_and_routes.ts"
   },
   "dependencies": {
     "@google/genai": "^2.28.0",

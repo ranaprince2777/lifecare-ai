@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+*.traineddata
 
 # debug
 npm-debug.log*
@@ -40,3 +41,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# uploads
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# local runtime data
+/data/*
+!/data/.gitkeep
+
+# temporary test documents & fixtures
+/test-fixtures/
+/public/sample_lab_report.pdf
+/public/test_report.pdf
+
+

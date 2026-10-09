@@ -9,10 +9,8 @@ import {
   AlertTriangle,
   Pill,
   Calendar,
-  CheckCircle2,
   Clock,
   ArrowRight,
-  ShieldCheck,
   Building,
 } from 'lucide-react';
 import { MedicalDocumentRecord, PatientProfile } from '@/lib/types/medical';

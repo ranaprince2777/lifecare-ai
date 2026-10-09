@@ -18,7 +18,7 @@ export interface FHIRBundle {
 }
 
 /**
- * Maps internal MediMind records and patient profile to an HL7 FHIR R4 compliant collection bundle.
+ * Maps internal LifeCare records and patient profile to an HL7 FHIR R4 compliant collection bundle.
  */
 export function mapToFHIRBundle(
   record: MedicalDocumentRecord,

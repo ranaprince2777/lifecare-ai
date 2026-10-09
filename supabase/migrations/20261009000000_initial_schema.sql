@@ -1,6 +1,8 @@
 -- ====================================================================
--- LifeCare AI — Hardened, Idempotent Database Schema & Security Model
--- Compatible with PostgreSQL 15+ (Mumbai: ap-south-1)
+-- LifeCare AI — Migration 20261009000000_initial_schema.sql
+-- Description: Initial relational schema with strict RLS and private storage bucket
+-- Region Target: Mumbai (ap-south-1)
+-- Safety: Non-destructive, idempotent, preserves demo and UUID identifiers
 -- ====================================================================
 
 -- Enable UUID extension

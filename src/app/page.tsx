@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Languages,
-  Share2,
   Stethoscope,
   Pill,
   ArrowRight,
@@ -33,7 +32,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mt-5 text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto">
-              Understand your prescriptions, lab tests, ultrasound scans, and hospital discharge summaries. MediMind transforms scattered medical documents into plain-language explanations, validated clinical data, and a lifelong chronological timeline.
+              Understand your prescriptions, lab tests, ultrasound scans, and hospital discharge summaries. LifeCare AI transforms scattered medical documents into plain-language explanations, validated clinical data, and a lifelong chronological timeline.
             </p>
 
             {/* Action CTAs */}
@@ -215,7 +214,7 @@ export default function LandingPage() {
                 Hindi Translations & HL7 FHIR Standard Export
               </h2>
               <p className="text-slate-300 text-sm leading-relaxed mb-6">
-                MediMind bridges language barriers with natural Hindi summaries in Devanagari script while safeguarding clinical terms and dosage instructions. For healthcare interoperability, every record can be converted to an HL7 FHIR R4 Bundle containing Patient, DiagnosticReport, Observation, and MedicationStatement resources.
+                LifeCare AI bridges language barriers with natural Hindi summaries in Devanagari script while safeguarding clinical terms and dosage instructions. For healthcare interoperability, every record can be converted to an HL7 FHIR R4 Bundle containing Patient, DiagnosticReport, Observation, and MedicationStatement resources.
               </p>
 
               <div className="flex flex-wrap items-center gap-3">

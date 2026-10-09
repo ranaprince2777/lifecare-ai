@@ -3,10 +3,6 @@
 import { useState, useEffect } from 'react';
 import {
   User,
-  Shield,
-  Activity,
-  AlertTriangle,
-  Pill,
   Heart,
   Phone,
   Save,
@@ -88,7 +84,7 @@ export default function ProfilePage() {
       <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 flex items-start gap-3">
         <Info className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
         <div className="text-xs text-teal-900 leading-relaxed">
-          <strong className="font-semibold text-teal-950">ABHA Demonstration Notice:</strong> The ABHA ID displayed below is a mock identifier for hackathon prototyping. In accordance with guidelines, MediMind AI does not claim official ABDM gateway integration or live national registry verification.
+          <strong className="font-semibold text-teal-950">ABHA Demonstration Notice:</strong> The ABHA ID displayed below is a mock identifier for hackathon prototyping. In accordance with guidelines, LifeCare AI does not claim official ABDM gateway integration or live national registry verification.
         </div>
       </div>
 

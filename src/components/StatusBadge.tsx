@@ -1,5 +1,5 @@
 import { ObservationFlag } from '@/lib/types/medical';
-import { ArrowUpRight, ArrowDownRight, CheckCircle2, AlertTriangle, HelpCircle } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, CheckCircle2, HelpCircle } from 'lucide-react';
 
 interface Props {
   flag: ObservationFlag;

@@ -21,8 +21,17 @@ def extract_pdf_text(file_path):
             "characterCount": total_chars,
             "text": full_text,
             "pages": pages_text,
-            "method": "pymupdf"
+            "method": "pymupdf",
+            "isScanned": False
         }
+
+        # If PDF has no digital embedded text, render page as image for OCR fallback
+        if total_chars < 30 and len(doc) > 0:
+            import base64
+            pix = doc[0].get_pixmap(dpi=150)
+            result["isScanned"] = True
+            result["pageImageBase64"] = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+
         print(json.dumps(result))
     except Exception as e:
         print(json.dumps({"success": False, "error": str(e), "text": ""}))

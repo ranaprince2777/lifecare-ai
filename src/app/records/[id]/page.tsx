@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   FileText,
@@ -23,7 +23,7 @@ import {
   Shield,
   Layers,
 } from 'lucide-react';
-import { MedicalDocumentRecord, ExtractedObservation } from '@/lib/types/medical';
+import { MedicalDocumentRecord } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 import ObservationsTable from '@/components/ObservationsTable';
 
@@ -31,7 +31,6 @@ type ActiveTab = 'summary' | 'observations' | 'medications' | 'raw_text' | 'fhir
 
 function RecordDetailContent() {
   const params = useParams();
-  const router = useRouter();
   const id = params?.id as string;
 
   const [record, setRecord] = useState<MedicalDocumentRecord | null>(null);
@@ -104,13 +103,11 @@ function RecordDetailContent() {
     if (!record) return;
     setRetryingAi(true);
     try {
-      const savedKey = localStorage.getItem('medimind_gemini_key') || undefined;
       const res = await fetch(`/api/records/${record.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'retry_ai',
-          apiKey: savedKey,
           generateHindi: true,
         }),
       });

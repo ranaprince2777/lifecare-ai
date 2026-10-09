@@ -14,7 +14,6 @@ import {
   RefreshCw,
   UploadCloud,
   ArrowRight,
-  ShieldAlert,
 } from 'lucide-react';
 import { MedicalDocumentRecord, DocumentType } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
@@ -35,23 +34,25 @@ export default function RecordsPage() {
   const [onlyAbnormal, setOnlyAbnormal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const fetchRecords = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('/api/records');
-      if (res.ok) {
-        const data = await res.json();
-        setRecords(data.records || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch records:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchRecords();
+    let ignore = false;
+    fetch('/api/records')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!ignore) {
+          setRecords(data.records || []);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          console.error('Failed to fetch records:', err);
+          setLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {

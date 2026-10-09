@@ -6,16 +6,13 @@ import {
   Clock,
   Calendar,
   Building,
-  Filter,
   Search,
   AlertTriangle,
-  Pill,
   ArrowRight,
   ExternalLink,
-  ChevronDown,
   CheckCircle2,
 } from 'lucide-react';
-import { MedicalDocumentRecord, DocumentType } from '@/lib/types/medical';
+import { MedicalDocumentRecord } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 
 export default function TimelinePage() {
@@ -135,7 +132,7 @@ export default function TimelinePage() {
         </div>
       ) : (
         <div className="relative border-l-2 border-teal-200 ml-4 sm:ml-8 space-y-8 pl-6 sm:pl-8">
-          {filteredRecords.map((item, idx) => {
+          {filteredRecords.map((item) => {
             const abnormalCount = item.observations.filter(
               (o) => o.flag === 'HIGH' || o.flag === 'LOW' || o.flag === 'CRITICAL_HIGH' || o.flag === 'CRITICAL_LOW'
             ).length;

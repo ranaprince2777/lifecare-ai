@@ -1,7 +1,7 @@
-# MediMind AI — Architecture & Implementation Plan
+# LifeCare AI — Architecture & Implementation Plan
 
 ## 1. System Overview
-MediMind AI is an AI-powered personal health copilot built for the Altrix Labs hackathon problem statement. It transforms medical documents (prescriptions, laboratory reports, diagnostic imaging reports, and discharge summaries) into plain-language summaries, validated structured data, reference-range evaluated observations, and a unified health profile and chronological timeline.
+LifeCare AI is an AI-powered personal health copilot built for the Altrix Labs hackathon problem statement. It transforms medical documents (prescriptions, laboratory reports, diagnostic imaging reports, and discharge summaries) into plain-language summaries, validated structured data, reference-range evaluated observations, and a unified health profile and chronological timeline.
 
 ## 2. Architecture & Modules
 

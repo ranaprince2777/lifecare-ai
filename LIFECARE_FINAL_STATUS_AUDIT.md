@@ -95,3 +95,44 @@ Live query to the Next.js API server (`http://localhost:3000/api/settings/storag
 | **Code Quality (ESLint)** | `npx eslint src` | **PASS (0 errors)** | 0 errors. |
 | **Production Build** | `npm run build` | **PASS (Exit code 0)** | 17 static & dynamic routes compiled and optimized cleanly with Turbopack. |
 | **E2E Route Verification** | `npm run test:e2e` | **PASS (19/19 tests)** | All 8 UI pages + 11 API endpoints verified responding cleanly with zero failures. |
+
+---
+
+## 5. GitHub Publication & Vercel Deployment Manifest
+
+### A. GitHub Repository Verification
+- **Target Repository:** `https://github.com/ranaprince2777/lifecare-ai`
+- **Visibility:** `PRIVATE` (Confirmed via GitHub API / CLI)
+- **Primary Branch:** `master`
+- **Latest Commit:** `9c90a25` (`feat: finalize LifeCare AI deployment`)
+- **Git Author & Commits:** Preserved original 2 baseline commits and branch history.
+- **Sensitive Exclusions:** Verified zero secrets in tree; `.env.local`, uploaded documents, and local databases excluded.
+
+### B. Vercel Deployment Integration Guide
+To deploy this private repository to Vercel with automated CI/CD:
+
+1. **Open Vercel New Project:** Navigate to [vercel.com/new](https://vercel.com/new).
+2. **Select GitHub Account:** Under "Import Git Repository", select `ranaprince2777`.
+3. **Select Repository:** Locate and click **Import** next to `ranaprince2777/lifecare-ai`.
+4. **Configure Project Settings:**
+   - **Framework Preset:** Next.js
+   - **Root Directory:** `./`
+   - **Build Command:** `npm run build` (default)
+   - **Output Directory:** `.next` (default)
+5. **Environment Variables Configuration (Production):**
+   Add the following variables in the Vercel Dashboard project configuration:
+
+| Environment Variable | Source / Description | Security Exposure |
+| :--- | :--- | :---: |
+| `NEXT_PUBLIC_APP_NAME` | `"LifeCare AI"` | Client-Safe |
+| `NEXT_PUBLIC_DEMO_MODE` | `"true"` | Client-Safe |
+| `MAX_FILE_SIZE_MB` | `"10"` | Client-Safe |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase Project URL (`https://*.supabase.co`) | Client-Safe |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Your Supabase anon public API key | Client-Safe |
+| `SUPABASE_SECRET_KEY` | Your Supabase service role secret key | **Server-Only (Secret)** |
+| `GEMINI_API_KEY` | Your Google AI Studio API key | **Server-Only (Secret)** |
+| `MEDIMIND_STORAGE_MODE` | `"auto"` (or `"supabase"`) | Server-Only |
+| `SUPABASE_STORAGE_BUCKET` | `"medical_documents"` | Server-Only |
+
+6. **Click Deploy:** Vercel will clone `ranaprince2777/lifecare-ai`, run the Turbopack build, and issue your production HTTPS domain (e.g., `https://lifecare-ai.vercel.app`).
+

@@ -1,33 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getGeminiConfigStatus } from '@/lib/ai/geminiClient';
 
 const ENV_LOCAL_PATH = path.join(process.cwd(), '.env.local');
 
-function getStoredKey(): string | null {
-  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) {
-    return process.env.GEMINI_API_KEY.trim();
-  }
-  if (fs.existsSync(ENV_LOCAL_PATH)) {
-    const content = fs.readFileSync(ENV_LOCAL_PATH, 'utf-8');
-    const match = content.match(/^GEMINI_API_KEY=(.*)$/m);
-    if (match && match[1].trim()) {
-      return match[1].trim();
-    }
-  }
-  return null;
-}
-
 export async function GET() {
-  const key = getStoredKey();
-  if (key && key !== 'your_gemini_api_key_here') {
-    return NextResponse.json({
-      configured: true,
-      keyLength: key.length,
-    });
-  }
+  const status = getGeminiConfigStatus();
   return NextResponse.json({
-    configured: false,
+    configured: status.configured,
+    statusText: status.statusText,
+    keyLength: status.keyLength,
+    primaryModel: status.primaryModel,
   });
 }
 

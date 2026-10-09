@@ -1,12 +1,14 @@
-import { GoogleGenAI } from '@google/genai';
-import fs from 'fs';
-import path from 'path';
 import {
   MedicalExtractionPayload,
   MedicalExtractionPayloadSchema,
   ExtractedObservation,
 } from '../types/medical';
 import { evaluateObservationAgainstRange } from './referenceRangeValidator';
+import {
+  getGeminiClient,
+  formatGeminiError,
+  FALLBACK_GEMINI_MODELS,
+} from '../ai/geminiClient';
 
 export interface ExtractionOptions {
   apiKey?: string;
@@ -81,44 +83,6 @@ You must respond ONLY with valid JSON conforming to the following structure:
  */
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Parses and categorizes Gemini API errors into helpful actionable messages.
- */
-function parseGeminiError(err: unknown): string {
-  if (!(err instanceof Error)) return 'Unknown Gemini API error occurred.';
-  const msg = err.message || '';
-
-  if (msg.includes('429') || /resource[_\s]exhausted|rate[_\s]limit/i.test(msg)) {
-    return 'Gemini API rate limit reached (429). Please wait a moment before trying again.';
-  }
-  if (msg.includes('403') || /api[_\s]key[_\s]invalid|unauthenticated|permission[_\s]denied/i.test(msg)) {
-    return 'Invalid Gemini API key. Please check that your key in .env.local or Settings is valid and has Gemini API enabled in Google AI Studio.';
-  }
-  if (/quota|bill/i.test(msg)) {
-    return 'Gemini API quota exceeded for this key. Please check your usage on Google AI Studio.';
-  }
-
-  return `Gemini API error: ${msg}`;
-}
-
-function getEffectiveKey(providedKey?: string): string | undefined {
-  if (providedKey && providedKey.trim()) return providedKey.trim();
-  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()) return process.env.GEMINI_API_KEY.trim();
-  if (process.env.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY.trim()) return process.env.GOOGLE_API_KEY.trim();
-  try {
-    const envPath = path.join(process.cwd(), '.env.local');
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf-8');
-      const match = content.match(/^GEMINI_API_KEY=(.*)$/m);
-      if (match && match[1].trim() && match[1].trim() !== 'your_gemini_api_key_here') {
-        return match[1].trim();
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return undefined;
-}
 
 /**
  * Calls Gemini API to extract structured data and generate summaries.
@@ -134,16 +98,15 @@ export async function extractStructuredMedicalData(
   error?: string;
   isMockFallback?: boolean;
 }> {
-  const apiKey = getEffectiveKey(options?.apiKey);
+  const ai = getGeminiClient(options?.apiKey);
 
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  if (!ai) {
     return {
       success: false,
-      error: 'GEMINI_API_KEY is not configured. Please add your API key in .env.local or in Settings to run live AI extraction.',
+      error: 'GEMINI_API_KEY is not configured in the server environment. Please set GEMINI_API_KEY in .env.local to run live AI extraction.',
     };
   }
 
-  const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
   const userPrompt = `
 Extract structured medical information and produce an accessible summary from this medical document:
 
@@ -154,14 +117,7 @@ ${documentText}
 Please include ${options?.generateHindi !== false ? 'both English and Hindi summaries' : 'an English summary'}.
 `;
 
-  // Models to attempt in order of preference: prefer gemini-3.1-flash-lite, fallback to 3.1-flash, 3.5, 3.8
-  const models = [
-    'gemini-3.1-flash-lite',
-    'gemini-3.1-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-3.8-flash',
-  ];
+  const models = FALLBACK_GEMINI_MODELS;
   let rawJsonResponse = '';
   let lastError: unknown = null;
 
@@ -202,7 +158,7 @@ Please include ${options?.generateHindi !== false ? 'both English and Hindi summ
         if (errMsg.includes('403') || /api[_\s]key[_\s]invalid/i.test(errMsg)) {
           return {
             success: false,
-            error: parseGeminiError(err),
+            error: formatGeminiError(err),
           };
         }
 
@@ -228,7 +184,7 @@ Please include ${options?.generateHindi !== false ? 'both English and Hindi summ
   if (!rawJsonResponse) {
     return {
       success: false,
-      error: parseGeminiError(lastError),
+      error: formatGeminiError(lastError),
     };
   }
 

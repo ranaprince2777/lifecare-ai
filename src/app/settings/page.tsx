@@ -13,8 +13,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Trash2,
-  Server,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -267,111 +265,115 @@ export default function SettingsPage() {
           </a>
         </div>
 
-        {/* Server Key Status Badge */}
-        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <Server className="w-4 h-4 text-teal-600 shrink-0" />
+        {/* AI Service Configuration Status Badge */}
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+          <div className="flex items-start gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${serverConfigured ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+              {serverConfigured ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+            </div>
             <div>
-              <span className="font-semibold text-slate-900">Server .env.local Status: </span>
-              {serverConfigured ? (
-                <span className="text-emerald-700 font-bold">
-                  Configured ({serverKeyLength} characters, stored server-side)
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-slate-900">
+                  {serverConfigured ? 'AI Service Configured' : 'AI Service Not Configured'}
                 </span>
-              ) : (
-                <span className="text-amber-700 font-medium">
-                  Not configured in .env.local
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${serverConfigured ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+                  {serverConfigured ? 'Active (Server .env.local)' : 'Action Required'}
                 </span>
-              )}
-            </div>
-          </div>
-
-          {serverConfigured && (
-            <button
-              type="button"
-              onClick={handleClearServerKey}
-              className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 self-start sm:self-auto font-medium"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear Key</span>
-            </button>
-          )}
-        </div>
-
-        {/* Input Form for New Key */}
-        <div className="space-y-3">
-          <label className="block text-xs font-semibold text-slate-700">
-            {serverConfigured ? 'Update Gemini API Key:' : 'Enter Gemini API Key:'}
-          </label>
-          <div className="relative">
-            <input
-              type={showKey ? 'text' : 'password'}
-              placeholder="AIzaSy..."
-              value={geminiKeyInput}
-              onChange={(e) => setGeminiKeyInput(e.target.value)}
-              className="w-full text-xs font-mono pr-20 pl-3 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50/50"
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-            >
-              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-500">
-            Keys are strictly saved to server-side <code className="font-mono bg-slate-100 px-1 rounded">.env.local</code> and never stored in browser localStorage or frontend bundles.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
-              type="button"
-              disabled={savingKey || !geminiKeyInput.trim()}
-              onClick={handleSaveKeyToServer}
-              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-sm flex items-center gap-1.5"
-            >
-              {savingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
-              <span>{savingKey ? 'Saving to Server...' : 'Save to .env.local'}</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={testingKey || (!serverConfigured && !geminiKeyInput.trim())}
-              onClick={handleTestConnection}
-              className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5"
-            >
-              {testingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 text-teal-600" />}
-              <span>{testingKey ? 'Testing Connection...' : 'Test Connection'}</span>
-            </button>
-          </div>
-
-          {/* Test Status Banner */}
-          {testResult && (
-            <div
-              className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
-                testResult.success
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                  : 'bg-red-50 border-red-200 text-red-900'
-              }`}
-            >
-              {testResult.success ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              )}
-              <div className="space-y-0.5">
-                <strong className="font-semibold">
-                  {testResult.success ? 'Connection Successful: ' : 'Connection Failed: '}
-                </strong>
-                <div>{testResult.message || testResult.error}</div>
-                {testResult.model && (
-                  <div className="font-mono text-[11px] text-emerald-700 pt-0.5">
-                    Model: {testResult.model}
-                  </div>
-                )}
               </div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {serverConfigured
+                  ? `Google Gemini is permanently configured on the server via GEMINI_API_KEY (${serverKeyLength} chars). Reusable across all document pipelines.`
+                  : 'Server environment variable GEMINI_API_KEY is not defined. Please add it to your server .env.local.'}
+              </p>
             </div>
-          )}
+          </div>
+
+          <button
+            type="button"
+            disabled={testingKey || !serverConfigured}
+            onClick={handleTestConnection}
+            className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-semibold transition shadow-sm flex items-center gap-1.5 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${testingKey ? 'animate-spin' : ''}`} />
+            <span>{testingKey ? 'Testing Connection...' : 'Test Live Connection'}</span>
+          </button>
         </div>
+
+        {/* Live Test Status Banner */}
+        {testResult && (
+          <div
+            className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+              testResult.success
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-red-50 border-red-200 text-red-900'
+            }`}
+          >
+            {testResult.success ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-0.5">
+              <strong className="font-semibold">
+                {testResult.success ? 'Connection Verified: ' : 'Connection Check Failed: '}
+              </strong>
+              <div>{testResult.message || testResult.error}</div>
+              {testResult.model && (
+                <div className="font-mono text-[11px] text-emerald-700 pt-0.5 font-semibold">
+                  Active Model: {testResult.model}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Collapsible Advanced Management */}
+        <details className="text-xs text-slate-600 pt-2 border-t border-slate-100 group">
+          <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1.5 select-none py-1">
+            <span>Advanced: Server Key Management & Manual Override</span>
+          </summary>
+          <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <p className="text-[11px] text-slate-500">
+              Only use this if you need to manually rotate the server-side key stored in <code className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200">.env.local</code>.
+            </p>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                placeholder="AIzaSy... (Paste new key to replace server key)"
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                className="w-full text-xs font-mono pr-20 pl-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              >
+                {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={savingKey || !geminiKeyInput.trim()}
+                onClick={handleSaveKeyToServer}
+                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition"
+              >
+                {savingKey ? 'Updating...' : 'Update Server Key'}
+              </button>
+              {serverConfigured && (
+                <button
+                  type="button"
+                  onClick={handleClearServerKey}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 transition"
+                >
+                  Clear Key
+                </button>
+              )}
+            </div>
+          </div>
+        </details>
       </div>
 
       {/* 2. Language Preference */}

@@ -240,8 +240,8 @@ export default function UploadPage() {
               <Key className="w-3.5 h-3.5 text-teal-600" />
               <span>
                 {serverKeyConfigured
-                  ? 'Gemini API Active (Server) ✓'
-                  : 'Configure Gemini Key in Settings →'}
+                  ? 'AI Service Configured (Server) ✓'
+                  : 'AI Service Not Configured →'}
               </span>
             </a>
           </div>

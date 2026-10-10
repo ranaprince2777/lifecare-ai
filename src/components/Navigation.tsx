@@ -8,6 +8,7 @@ import {
   UploadCloud,
   Clock,
   User,
+  Users,
   Settings,
   ShieldCheck,
   Menu,
@@ -21,6 +22,7 @@ export default function Navigation() {
 
   const navLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: Activity },
+    { href: '/patients', label: 'Patients', icon: Users },
     { href: '/upload', label: 'Upload Document', icon: UploadCloud },
     { href: '/records', label: 'Medical Records', icon: FileText },
     { href: '/timeline', label: 'Health Timeline', icon: Clock },

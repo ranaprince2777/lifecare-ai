@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   User,
   Heart,
@@ -12,15 +14,65 @@ import {
   Copy,
   Check,
   ShieldCheck,
+  Users,
+  ChevronDown,
+  Tag,
+  ArrowRight,
 } from 'lucide-react';
 import { PatientProfile } from '@/lib/types/medical';
 
-export default function ProfilePage() {
+function ProfileContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedPatientId = searchParams.get('patientId') || '';
+
+  const [patients, setPatients] = useState<PatientProfile[]>([]);
   const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(requestedPatientId);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedAbha, setCopiedAbha] = useState(false);
+
+  // Load patient list
+  useEffect(() => {
+    fetch('/api/patients')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.patients)) {
+          setPatients(data.patients);
+        }
+      })
+      .catch((err) => console.error('Failed to load patients for profile:', err));
+  }, []);
+
+  // Load profile for selected patient or default
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        setLoading(true);
+        const query = selectedPatientId ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
+        const res = await fetch(`/api/profile${query}`);
+        if (res.ok) {
+          const data = await res.json();
+          setProfile(data.profile);
+          if (data.profile?.id) {
+            setSelectedPatientId(data.profile.id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfile();
+  }, [selectedPatientId]);
+
+  const handlePatientSelectChange = (id: string) => {
+    setSelectedPatientId(id);
+    router.push(`/profile?patientId=${encodeURIComponent(id)}`);
+  };
 
   const generateMockAbha = () => {
     if (!profile) return;
@@ -32,30 +84,12 @@ export default function ProfilePage() {
     setProfile({ ...profile, mockAbhaId: newId });
   };
 
-  useEffect(() => {
-    async function fetchProfile() {
-      try {
-        setLoading(true);
-        const res = await fetch('/api/profile');
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data.profile);
-        }
-      } catch (err) {
-        console.error('Failed to load profile:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchProfile();
-  }, []);
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile) return;
     try {
       setSaving(true);
-      const res = await fetch('/api/profile', {
+      const res = await fetch(`/api/profile?patientId=${encodeURIComponent(profile.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile),
@@ -84,15 +118,70 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <User className="w-6 h-6 text-teal-600" />
-          <span>Patient Health Profile</span>
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Unified demographic baseline, chronic diagnoses, known allergies, and mock ABHA identification.
-        </p>
+      {/* Title & Patient Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <User className="w-6 h-6 text-teal-600" />
+            <span>Patient Health Profile</span>
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Demographic baseline, chronic diagnoses, known allergies, and mock ABHA identification.
+          </p>
+        </div>
+
+        {/* Patient Switcher */}
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <select
+              value={selectedPatientId}
+              onChange={(e) => handlePatientSelectChange(e.target.value)}
+              className="appearance-none px-3.5 py-2 pr-8 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-sm"
+            >
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.isDemo ? '🧪 [Demo] ' : '👤 '}
+                  {p.fullName}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          <Link
+            href="/patients"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition flex items-center gap-1"
+          >
+            <Users className="w-3.5 h-3.5 text-slate-500" />
+            <span>Registry</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Patient Status Banner */}
+      <div className="flex items-center justify-between p-4 rounded-2xl bg-white border border-slate-200 shadow-sm text-xs">
+        <div className="flex items-center gap-2">
+          {profile.isDemo ? (
+            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-semibold flex items-center gap-1">
+              <Tag className="w-3 h-3" />
+              Demo Fixture Profile
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" />
+              Verified Patient Record
+            </span>
+          )}
+          <span className="font-mono text-slate-500">ID: {profile.id}</span>
+        </div>
+
+        <Link
+          href={`/patients/${encodeURIComponent(profile.id)}`}
+          className="text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-1"
+        >
+          <span>View Patient Command Center</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
       {/* Mock ABHA ID Notice Banner */}
@@ -141,7 +230,7 @@ export default function ProfilePage() {
               <div className="relative flex items-center">
                 <input
                   type="text"
-                  value={profile.mockAbhaId}
+                  value={profile.mockAbhaId || ''}
                   onChange={(e) => setProfile({ ...profile, mockAbhaId: e.target.value })}
                   className="w-full text-xs font-mono px-3 py-2 pr-16 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50 font-bold"
                   placeholder="XX-XXXX-XXXX-XXXX"
@@ -149,9 +238,11 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(profile.mockAbhaId);
-                    setCopiedAbha(true);
-                    setTimeout(() => setCopiedAbha(false), 2000);
+                    if (profile.mockAbhaId) {
+                      navigator.clipboard.writeText(profile.mockAbhaId);
+                      setCopiedAbha(true);
+                      setTimeout(() => setCopiedAbha(false), 2000);
+                    }
                   }}
                   className="absolute right-2 px-2 py-1 text-[10px] font-semibold rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center gap-1 transition"
                   title="Copy Mock ABHA"
@@ -162,7 +253,7 @@ export default function ProfilePage() {
               </div>
 
               <div className="mt-1 flex items-center gap-1.5 text-[11px]">
-                {/^\d{2}-\d{4}-\d{4}-\d{4}$/.test(profile.mockAbhaId.trim()) ? (
+                {profile.mockAbhaId && /^\d{2}-\d{4}-\d{4}-\d{4}$/.test(profile.mockAbhaId.trim()) ? (
                   <span className="text-emerald-700 font-medium flex items-center gap-1">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Valid 14-digit ABDM Mock Format</span>
@@ -179,7 +270,7 @@ export default function ProfilePage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Age (Years)</label>
               <input
                 type="number"
-                value={profile.age}
+                value={profile.age || ''}
                 onChange={(e) => setProfile({ ...profile, age: parseInt(e.target.value) || 0 })}
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
@@ -188,10 +279,11 @@ export default function ProfilePage() {
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Blood Group</label>
               <select
-                value={profile.bloodGroup}
+                value={profile.bloodGroup || ''}
                 onChange={(e) => setProfile({ ...profile, bloodGroup: e.target.value as PatientProfile['bloodGroup'] })}
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
               >
+                <option value="">Not Recorded</option>
                 {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
                   <option key={bg} value={bg}>{bg}</option>
                 ))}
@@ -200,38 +292,21 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Section 2: Clinical Background */}
+        {/* Section 2: Medical Baseline */}
         <div>
           <h2 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-            <Heart className="w-4 h-4 text-red-600" />
-            <span>Clinical Conditions & Sensitivities</span>
+            <Heart className="w-4 h-4 text-rose-600" />
+            <span>Clinical Conditions & Drug Allergies</span>
           </h2>
 
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Known Drug & Food Allergies (Comma separated)
+                Diagnosed Chronic Conditions (Comma-separated)
               </label>
               <input
                 type="text"
-                value={profile.allergies.join(', ')}
-                onChange={(e) =>
-                  setProfile({
-                    ...profile,
-                    allergies: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                  })
-                }
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Chronic Medical Diagnoses (Comma separated)
-              </label>
-              <input
-                type="text"
-                value={profile.chronicConditions.join(', ')}
+                value={(profile.chronicConditions || []).join(', ')}
                 onChange={(e) =>
                   setProfile({
                     ...profile,
@@ -239,6 +314,25 @@ export default function ProfilePage() {
                   })
                 }
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
+                placeholder="e.g. Type 2 Diabetes, Hypertension, Dyslipidemia"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Known Drug Allergies (Comma-separated)
+              </label>
+              <input
+                type="text"
+                value={(profile.allergies || []).join(', ')}
+                onChange={(e) =>
+                  setProfile({
+                    ...profile,
+                    allergies: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                  })
+                }
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
+                placeholder="e.g. Penicillin, Sulfa drugs"
               />
             </div>
           </div>
@@ -247,8 +341,8 @@ export default function ProfilePage() {
         {/* Section 3: Emergency Contact */}
         <div>
           <h2 className="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-            <Phone className="w-4 h-4 text-teal-600" />
-            <span>Emergency Contact</span>
+            <Phone className="w-4 h-4 text-blue-600" />
+            <span>Emergency Contact & Caregiver</span>
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -256,11 +350,16 @@ export default function ProfilePage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Name</label>
               <input
                 type="text"
-                value={profile.emergencyContact.name}
+                value={profile.emergencyContact?.name || ''}
                 onChange={(e) =>
                   setProfile({
                     ...profile,
-                    emergencyContact: { ...profile.emergencyContact, name: e.target.value },
+                    emergencyContact: {
+                      ...profile.emergencyContact,
+                      name: e.target.value,
+                      relationship: profile.emergencyContact?.relationship || '',
+                      phone: profile.emergencyContact?.phone || '',
+                    },
                   })
                 }
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
@@ -271,11 +370,16 @@ export default function ProfilePage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Relationship</label>
               <input
                 type="text"
-                value={profile.emergencyContact.relationship}
+                value={profile.emergencyContact?.relationship || ''}
                 onChange={(e) =>
                   setProfile({
                     ...profile,
-                    emergencyContact: { ...profile.emergencyContact, relationship: e.target.value },
+                    emergencyContact: {
+                      ...profile.emergencyContact,
+                      name: profile.emergencyContact?.name || '',
+                      relationship: e.target.value,
+                      phone: profile.emergencyContact?.phone || '',
+                    },
                   })
                 }
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
@@ -286,11 +390,16 @@ export default function ProfilePage() {
               <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number</label>
               <input
                 type="text"
-                value={profile.emergencyContact.phone}
+                value={profile.emergencyContact?.phone || ''}
                 onChange={(e) =>
                   setProfile({
                     ...profile,
-                    emergencyContact: { ...profile.emergencyContact, phone: e.target.value },
+                    emergencyContact: {
+                      ...profile.emergencyContact,
+                      name: profile.emergencyContact?.name || '',
+                      relationship: profile.emergencyContact?.relationship || '',
+                      phone: e.target.value,
+                    },
                   })
                 }
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
@@ -300,25 +409,47 @@ export default function ProfilePage() {
         </div>
 
         {/* Submit */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-          {savedSuccess && (
-            <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Profile updated successfully!</span>
-            </span>
-          )}
-          {!savedSuccess && <span></span>}
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <div>
+            {savedSuccess && (
+              <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Profile updated successfully!</span>
+              </span>
+            )}
+          </div>
 
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition flex items-center gap-2"
+            className="px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold shadow-sm transition flex items-center gap-2 disabled:opacity-50"
           >
-            <Save className="w-4 h-4" />
-            <span>{saving ? 'Saving...' : 'Save Profile'}</span>
+            {saving ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Profile Changes</span>
+              </>
+            )}
           </button>
         </div>
       </form>
     </div>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-4xl mx-auto px-4 py-12 text-center text-slate-500 text-sm">
+        Loading patient profile...
+      </div>
+    }>
+      <ProfileContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   UploadCloud,
   CheckCircle2,
@@ -13,15 +13,20 @@ import {
   Languages,
   Sparkles,
   Key,
+  Users,
+  UserCheck,
 } from 'lucide-react';
-import { MedicalDocumentRecord } from '@/lib/types/medical';
+import { MedicalDocumentRecord, PatientProfile } from '@/lib/types/medical';
 import ObservationsTable from '@/components/ObservationsTable';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 
 type ProcessingStep = 'idle' | 'validating' | 'extracting' | 'structuring' | 'saving' | 'done' | 'error';
 
-export default function UploadPage() {
+function UploadContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedPatientId = searchParams.get('patientId') || 'auto';
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [dragActive, setDragActive] = useState(false);
@@ -35,6 +40,10 @@ export default function UploadPage() {
   const [aiWarning, setAiWarning] = useState<string | null>(null);
   const [serverKeyConfigured, setServerKeyConfigured] = useState<boolean | null>(null);
 
+  // Patient Registry State
+  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(preselectedPatientId);
+
   useEffect(() => {
     // Purge legacy client-side storage for security
     if (typeof window !== 'undefined') {
@@ -47,6 +56,16 @@ export default function UploadPage() {
       .then((res) => res.json())
       .then((data) => setServerKeyConfigured(Boolean(data?.configured)))
       .catch(() => setServerKeyConfigured(false));
+
+    // Load available patients for document association
+    fetch('/api/patients')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.patients)) {
+          setPatients(data.patients);
+        }
+      })
+      .catch((err) => console.error('Failed to load patients list:', err));
   }, []);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -106,6 +125,10 @@ export default function UploadPage() {
       formData.append('file', selectedFile);
       formData.append('generateHindi', generateHindi ? 'true' : 'false');
 
+      if (selectedPatientId && selectedPatientId !== 'auto') {
+        formData.append('patientId', selectedPatientId);
+      }
+
       setStep('extracting');
       setStatusMessage(
         selectedFile.type === 'application/pdf'
@@ -159,6 +182,37 @@ export default function UploadPage() {
       {/* Main Upload Box */}
       {step !== 'done' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+          {/* Patient Association Selector */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-800">
+                  Associate With Patient
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Select an existing patient or let the pipeline match by extracted patient name.
+                </p>
+              </div>
+            </div>
+
+            <select
+              value={selectedPatientId}
+              onChange={(e) => setSelectedPatientId(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
+            >
+              <option value="auto">⚡ Auto-Detect / Match by Document Name</option>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.isDemo ? '🧪 [Demo] ' : '👤 '}
+                  {p.fullName} ({p.id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Drag & Drop Target Area */}
           <div
             onDragEnter={handleDrag}
@@ -351,13 +405,29 @@ export default function UploadPage() {
                 <h2 className="text-base font-bold text-emerald-950">
                   Document Processed Successfully!
                 </h2>
-                <p className="text-xs text-emerald-800 mt-0.5">
-                  Extracted and saved as <strong className="text-emerald-950">{processedRecord.documentType}</strong>.
-                </p>
+                <div className="flex items-center gap-2 flex-wrap text-xs text-emerald-800 mt-0.5">
+                  <span>Extracted and saved as <strong className="text-emerald-950">{processedRecord.documentType}</strong>.</span>
+                  {processedRecord.patientId && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-200/80 text-emerald-900 font-mono text-[11px] font-semibold flex items-center gap-1">
+                      <UserCheck className="w-3 h-3" />
+                      Patient: {processedRecord.patientNameExtracted || processedRecord.patientId}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
+              {processedRecord.patientId && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/patients/${encodeURIComponent(processedRecord.patientId!)}`)}
+                  className="px-3.5 py-2 rounded-xl bg-white border border-emerald-300 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 transition flex items-center gap-1.5"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>View Patient Records</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -423,5 +493,17 @@ export default function UploadPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center text-slate-500 text-sm">
+        Loading upload interface...
+      </div>
+    }>
+      <UploadContent />
+    </Suspense>
   );
 }

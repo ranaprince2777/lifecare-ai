@@ -6,8 +6,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const query = searchParams.get('q')?.toLowerCase();
+    const patientId = searchParams.get('patientId') || undefined;
 
-    let records = await getAllMedicalRecords();
+    let records = await getAllMedicalRecords(undefined, patientId);
 
     if (type && type !== 'All') {
       records = records.filter((r) => r.documentType === type);

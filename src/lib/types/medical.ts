@@ -109,6 +109,7 @@ export type MedicalExtractionPayload = z.infer<typeof MedicalExtractionPayloadSc
 export interface MedicalDocumentRecord {
   id: string;
   userId?: string;
+  patientId?: string;
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -133,13 +134,14 @@ export interface MedicalDocumentRecord {
 export interface PatientProfile {
   id: string;
   fullName: string;
-  age: number;
-  gender: 'Male' | 'Female' | 'Other' | 'Prefer not to say';
-  bloodGroup: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+  age?: number | null;
+  gender?: 'Male' | 'Female' | 'Other' | 'Prefer not to say' | null;
+  bloodGroup?: string | null;
+  contact?: string | null;
   mockAbhaId: string; // Fictional/Mock ID clearly labelled
   allergies: string[];
   chronicConditions: string[];
-  emergencyContact: {
+  emergencyContact?: {
     name: string;
     relationship: string;
     phone: string;
@@ -150,4 +152,28 @@ export interface PatientProfile {
     activeMedicationsCount: number;
     lastVisitDate: string | null;
   };
+  createdAt?: string;
+  updatedAt?: string;
+  isDemo?: boolean;
 }
+
+export interface DashboardStats {
+  totalPatients: number;
+  totalDocuments: number;
+  totalObservations: number;
+  abnormalObservationsCount: number;
+  activeMedicationsCount: number;
+  chronicConditionsCount: number;
+  selectedPatientId?: string | null;
+  selectedPatient?: PatientProfile | null;
+  recentUploads: MedicalDocumentRecord[];
+  recentAbnormalities: (ExtractedObservation & {
+    documentId: string;
+    documentType: string;
+    documentDate: string;
+    patientName?: string;
+    patientId?: string;
+  })[];
+  isAggregate: boolean;
+}
+

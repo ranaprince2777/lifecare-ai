@@ -2,12 +2,112 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { MedicalDocumentRecord, PatientProfile, ExtractedObservation, ExtractedMedication, ExtractedDiagnosis } from '../types/medical';
+import { MedicalDocumentRecord, PatientProfile, ExtractedObservation, ExtractedMedication, ExtractedDiagnosis, DashboardStats } from '../types/medical';
 import { DEMO_PATIENT, DEMO_RECORDS } from '../demo/fixtures';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
 const PROFILE_FILE = path.join(DATA_DIR, 'patient.json');
+const PATIENTS_FILE = path.join(DATA_DIR, 'patients.json');
+
+export const INITIAL_PATIENTS: PatientProfile[] = [
+  {
+    id: 'pat-meera-nambiar',
+    fullName: 'Meera Nambiar',
+    age: 44,
+    gender: 'Female',
+    bloodGroup: 'O+',
+    mockAbhaId: '42-8192-3041-9921',
+    allergies: ['None documented'],
+    chronicConditions: ['Type 2 Diabetes Mellitus', 'Mixed Dyslipidemia'],
+    emergencyContact: {
+      name: 'K. Nambiar',
+      relationship: 'Spouse',
+      phone: '+91 98450 12345',
+    },
+    metrics: {
+      totalDocuments: 2,
+      abnormalObservationsCount: 5,
+      activeMedicationsCount: 2,
+      lastVisitDate: '2026-04-08',
+    },
+    isDemo: false,
+    createdAt: '2026-04-08T09:00:00.000Z',
+    updatedAt: '2026-04-08T09:00:00.000Z',
+  },
+  {
+    id: 'pat-anita-desai',
+    fullName: 'Anita Desai',
+    age: 38,
+    gender: 'Female',
+    bloodGroup: 'B+',
+    mockAbhaId: '19-5821-4491-0382',
+    allergies: ['None documented'],
+    chronicConditions: ['Mild fasting hyperglycemia', 'Mild hyperuricemia'],
+    emergencyContact: {
+      name: 'R. Desai',
+      relationship: 'Spouse',
+      phone: '+91 98200 54321',
+    },
+    metrics: {
+      totalDocuments: 2,
+      abnormalObservationsCount: 2,
+      activeMedicationsCount: 0,
+      lastVisitDate: '2026-04-05',
+    },
+    isDemo: false,
+    createdAt: '2026-04-05T09:00:00.000Z',
+    updatedAt: '2026-04-05T09:00:00.000Z',
+  },
+  {
+    id: 'pat-rajesh-sharma',
+    fullName: 'Rajesh Sharma',
+    age: 58,
+    gender: 'Male',
+    bloodGroup: 'A+',
+    mockAbhaId: '88-1920-7721-4819',
+    allergies: ['None documented'],
+    chronicConditions: ['Acute Coronary Syndrome (NSTEMI)', 'Primary Essential Hypertension'],
+    emergencyContact: {
+      name: 'P. Sharma',
+      relationship: 'Family',
+      phone: '+91 97110 99887',
+    },
+    metrics: {
+      totalDocuments: 1,
+      abnormalObservationsCount: 0,
+      activeMedicationsCount: 5,
+      lastVisitDate: '2026-04-05',
+    },
+    isDemo: false,
+    createdAt: '2026-04-05T09:00:00.000Z',
+    updatedAt: '2026-04-05T09:00:00.000Z',
+  },
+  {
+    id: 'demo-patient-001',
+    fullName: 'Rajesh Kumar Verma',
+    age: 48,
+    gender: 'Male',
+    bloodGroup: 'B+',
+    mockAbhaId: '91-4829-1049-5521 (Demo)',
+    allergies: ['Penicillin (Skin rash)', 'Sulfonamides'],
+    chronicConditions: ['Type 2 Diabetes Mellitus', 'Essential Hypertension'],
+    emergencyContact: {
+      name: 'Sunita Verma',
+      relationship: 'Spouse',
+      phone: '+91 98765 43210',
+    },
+    metrics: {
+      totalDocuments: 4,
+      abnormalObservationsCount: 4,
+      activeMedicationsCount: 3,
+      lastVisitDate: '2026-04-08',
+    },
+    isDemo: true,
+    createdAt: '2026-04-01T09:00:00.000Z',
+    updatedAt: '2026-04-01T09:00:00.000Z',
+  },
+];
 
 // Environment Variables with dual-alias support
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -93,6 +193,10 @@ export function ensureStorageInitialized() {
     if (!fs.existsSync(PROFILE_FILE)) {
       fs.writeFileSync(PROFILE_FILE, JSON.stringify(DEMO_PATIENT, null, 2), 'utf-8');
     }
+
+    if (!fs.existsSync(PATIENTS_FILE)) {
+      fs.writeFileSync(PATIENTS_FILE, JSON.stringify(INITIAL_PATIENTS, null, 2), 'utf-8');
+    }
   } catch {
     // Read-only filesystem in serverless hosting (e.g. Vercel Lambda); proceed gracefully
   }
@@ -146,14 +250,21 @@ export interface DbMedicalDocument {
   updated_at: string;
 }
 
+export const isUuid = (val?: string | null): boolean =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
 export function recordToDbDocument(record: MedicalDocumentRecord): DbMedicalDocument {
+  const safeFilePath = record.patientId && !record.filePath.startsWith('patients/')
+    ? `patients/${record.patientId}|${record.filePath}`
+    : record.filePath;
+
   return {
     id: record.id,
-    user_id: record.userId || null,
+    user_id: record.patientId || record.userId || null,
     file_name: record.fileName,
     file_size: record.fileSize,
     mime_type: record.mimeType,
-    file_path: record.filePath,
+    file_path: safeFilePath,
     file_hash: record.fileHash,
     document_type: record.documentType,
     document_date: record.documentDate || null,
@@ -176,13 +287,30 @@ export function dbDocumentToRecord(
   diagnoses: ExtractedDiagnosis[] = [],
   summary?: import('../types/medical').DocumentSummary
 ): MedicalDocumentRecord {
+  let resolvedPatientId = doc.user_id || undefined;
+  let resolvedFilePath = doc.file_path;
+
+  if (doc.file_path && doc.file_path.startsWith('patients/')) {
+    const pipeIdx = doc.file_path.indexOf('|');
+    if (pipeIdx > 0) {
+      resolvedPatientId = doc.file_path.substring('patients/'.length, pipeIdx);
+      resolvedFilePath = doc.file_path.substring(pipeIdx + 1);
+    } else {
+      const parts = doc.file_path.split('/');
+      if (parts.length >= 2) {
+        resolvedPatientId = parts[1];
+      }
+    }
+  }
+
   return {
     id: doc.id,
     userId: doc.user_id || undefined,
+    patientId: resolvedPatientId,
     fileName: doc.file_name,
     fileSize: doc.file_size,
     mimeType: doc.mime_type,
-    filePath: doc.file_path,
+    filePath: resolvedFilePath,
     fileHash: doc.file_hash,
     documentType: doc.document_type as import('../types/medical').DocumentType,
     documentDate: doc.document_date,
@@ -216,7 +344,7 @@ export function dbDocumentToRecord(
 /**
  * Get all medical documents sorted by date (newest first).
  */
-export async function getAllMedicalRecords(requestUserId?: string): Promise<MedicalDocumentRecord[]> {
+export async function getAllMedicalRecords(requestUserId?: string, patientId?: string): Promise<MedicalDocumentRecord[]> {
   ensureStorageInitialized();
 
   // If Supabase is configured and not strictly set to local mode, attempt cloud query
@@ -224,13 +352,20 @@ export async function getAllMedicalRecords(requestUserId?: string): Promise<Medi
     try {
       let query = supabase.from('medical_documents').select('*').order('created_at', { ascending: false });
 
-      if (requestUserId) {
+      if (patientId && patientId !== 'all') {
+        if (isUuid(patientId)) {
+          query = query.eq('user_id', patientId);
+        }
+      } else if (requestUserId && isUuid(requestUserId)) {
         query = query.or(`user_id.eq.${requestUserId},id.like.demo-%`);
       }
 
       const { data: docs, error: docError } = await query;
 
-      if (!docError && docs && docs.length > 0) {
+      if (!docError && docs) {
+        if (docs.length === 0) {
+          return [];
+        }
         const docIds = docs.map((d: DbMedicalDocument) => d.id);
 
         // Fetch decomposed children in parallel
@@ -313,9 +448,45 @@ export async function getAllMedicalRecords(requestUserId?: string): Promise<Medi
           });
         });
 
-        const records = docs.map((doc: DbMedicalDocument) =>
-          dbDocumentToRecord(doc, obsMap.get(doc.id) || [], medMap.get(doc.id) || [], diagMap.get(doc.id) || [], sumMap.get(doc.id))
-        );
+        const records = docs.map((doc: DbMedicalDocument) => {
+          const rec = dbDocumentToRecord(
+            doc,
+            obsMap.get(doc.id) || [],
+            medMap.get(doc.id) || [],
+            diagMap.get(doc.id) || [],
+            sumMap.get(doc.id)
+          );
+          return enrichRecordPatientId(rec);
+        });
+
+        // Also cross-reference local store to ensure patientId & patientNameExtracted are never lost
+        try {
+          if (fs.existsSync(RECORDS_FILE)) {
+            const raw = fs.readFileSync(RECORDS_FILE, 'utf-8');
+            const localList: MedicalDocumentRecord[] = JSON.parse(raw);
+            const localMap = new Map(localList.map((l) => [l.id, l]));
+            for (const r of records) {
+              const localMatch = localMap.get(r.id);
+              if (localMatch?.patientId && !r.patientId) {
+                r.patientId = localMatch.patientId;
+              }
+              if (localMatch?.patientNameExtracted && !r.patientNameExtracted) {
+                r.patientNameExtracted = localMatch.patientNameExtracted;
+              }
+            }
+          }
+        } catch {
+          // ignore local read error
+        }
+
+        if (patientId && patientId !== 'all') {
+          return records.filter(
+            (r) =>
+              r.patientId === patientId ||
+              r.userId === patientId ||
+              (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === patientId.toLowerCase().trim())
+          );
+        }
 
         return records;
       }
@@ -327,9 +498,17 @@ export async function getAllMedicalRecords(requestUserId?: string): Promise<Medi
   // Local JSON Fallback Engine
   try {
     const raw = fs.readFileSync(RECORDS_FILE, 'utf-8');
-    const records: MedicalDocumentRecord[] = JSON.parse(raw);
+    const records: MedicalDocumentRecord[] = JSON.parse(raw).map(enrichRecordPatientId);
 
-    const authorized = records.filter((r) => verifyRecordAccess(r, requestUserId));
+    let authorized = records.filter((r) => verifyRecordAccess(r, requestUserId));
+    if (patientId && patientId !== 'all') {
+      authorized = authorized.filter(
+        (r) =>
+          r.patientId === patientId ||
+          r.userId === patientId ||
+          (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === patientId.toLowerCase().trim())
+      );
+    }
 
     return authorized.sort((a, b) => {
       const dateA = a.documentDate || a.uploadedAt;
@@ -362,6 +541,19 @@ export async function getMedicalRecordById(id: string, requestUserId?: string): 
  */
 export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<MedicalDocumentRecord> {
   ensureStorageInitialized();
+  enrichRecordPatientId(record);
+
+  if (record.patientId && !record.patientNameExtracted) {
+    try {
+      const allPatients = await getAllPatients();
+      const match = allPatients.find((p) => p.id === record.patientId);
+      if (match) {
+        record.patientNameExtracted = match.fullName;
+      }
+    } catch {
+      // Continue gracefully
+    }
+  }
 
   // 1. Always persist in local JSON to guarantee zero data loss
   const localRecords = await getLocalRecordsRaw();
@@ -384,6 +576,9 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
   if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
     try {
       const dbDoc = recordToDbDocument(record);
+      if (dbDoc.user_id && !isUuid(dbDoc.user_id)) {
+        dbDoc.user_id = null;
+      }
 
       // Upsert master document
       const { error: docError } = await supabase.from('medical_documents').upsert(dbDoc, { onConflict: 'id' });
@@ -397,12 +592,14 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
         supabase.from('document_summaries').delete().eq('document_id', record.id),
       ]);
 
+      const safeChildUserId = isUuid(record.userId) ? record.userId : null;
+
       // Insert Observations
       if (record.observations.length > 0) {
         const obsRows = record.observations.map((obs) => ({
           id: obs.id || randomUUID(),
           document_id: record.id,
-          user_id: record.userId || null,
+          user_id: safeChildUserId,
           test_name: obs.testName,
           category: obs.category || 'General',
           test_result_value: obs.testResultValue,
@@ -426,7 +623,7 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
         const medRows = record.medications.map((med) => ({
           id: med.id || randomUUID(),
           document_id: record.id,
-          user_id: record.userId || null,
+          user_id: safeChildUserId,
           medication_name: med.medicationName,
           dosage: med.dosage || null,
           frequency: med.frequency || null,
@@ -448,7 +645,7 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
         const diagRows = record.diagnoses.map((diag) => ({
           id: diag.id || randomUUID(),
           document_id: record.id,
-          user_id: record.userId || null,
+          user_id: safeChildUserId,
           condition_name: diag.conditionName,
           icd10_code: diag.icd10Code || null,
           status: diag.status || 'Active',
@@ -465,7 +662,7 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
         const sumRow = {
           id: record.summary.id || randomUUID(),
           document_id: record.id,
-          user_id: record.userId || null,
+          user_id: safeChildUserId,
           summary_en: record.summary.summaryEn,
           summary_hi: record.summary.summaryHi || null,
           key_findings: record.summary.keyFindings || [],
@@ -528,48 +725,394 @@ export async function deleteMedicalRecord(id: string, requestUserId?: string): P
 }
 
 /**
- * Get patient profile.
+ * Maps raw records to ensure patientId is consistently populated.
  */
-export async function getPatientProfile(): Promise<PatientProfile> {
-  ensureStorageInitialized();
-  try {
-    const raw = fs.readFileSync(PROFILE_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return DEMO_PATIENT;
+export function enrichRecordPatientId(record: MedicalDocumentRecord): MedicalDocumentRecord {
+  if (!record.patientId) {
+    if (record.userId && (record.userId.startsWith('pat-') || record.userId.startsWith('demo-'))) {
+      record.patientId = record.userId;
+    } else if (record.patientNameExtracted) {
+      const lower = record.patientNameExtracted.toLowerCase();
+      if (lower.includes('meera')) record.patientId = 'pat-meera-nambiar';
+      else if (lower.includes('anita')) record.patientId = 'pat-anita-desai';
+      else if (lower.includes('sharma')) record.patientId = 'pat-rajesh-sharma';
+      else if (lower.includes('verma') || record.id.startsWith('demo-')) record.patientId = 'demo-patient-001';
+      else record.patientId = `pat-${record.patientNameExtracted.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+    } else if (record.id.startsWith('demo-')) {
+      record.patientId = 'demo-patient-001';
+    }
   }
+  return record;
 }
 
 /**
- * Update patient profile.
+ * Get all registered patients with real-time calculated metrics from saved documents.
  */
-export async function updatePatientProfile(updated: Partial<PatientProfile>): Promise<PatientProfile> {
+export async function getAllPatients(): Promise<PatientProfile[]> {
   ensureStorageInitialized();
-  const current = await getPatientProfile();
-  const merged: PatientProfile = { ...current, ...updated };
-  fs.writeFileSync(PROFILE_FILE, JSON.stringify(merged, null, 2), 'utf-8');
 
-  // Sync to Supabase profiles if configured
+  let patients: PatientProfile[] = [];
+
+  // 1. Try Supabase profiles
   if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
     try {
-      await supabase.from('profiles').upsert({
-        id: merged.id,
-        full_name: merged.fullName,
-        age: merged.age,
-        gender: merged.gender,
-        blood_group: merged.bloodGroup,
-        mock_abha_id: merged.mockAbhaId,
-        allergies: merged.allergies,
-        chronic_conditions: merged.chronicConditions,
-        emergency_contact: merged.emergencyContact,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        patients = data.map((row: Record<string, unknown>) => ({
+          id: (row.id as string) || '',
+          fullName: (row.full_name as string) || 'Unnamed Patient',
+          age: row.age != null ? Number(row.age) : null,
+          gender: (row.gender as PatientProfile['gender']) || null,
+          bloodGroup: (row.blood_group as string) || null,
+          mockAbhaId: (row.mock_abha_id as string) || '',
+          allergies: Array.isArray(row.allergies) ? (row.allergies as string[]) : [],
+          chronicConditions: Array.isArray(row.chronic_conditions) ? (row.chronic_conditions as string[]) : [],
+          emergencyContact: (row.emergency_contact as PatientProfile['emergencyContact']) || undefined,
+          metrics: {
+            totalDocuments: 0,
+            abnormalObservationsCount: 0,
+            activeMedicationsCount: 0,
+            lastVisitDate: null,
+          },
+          isDemo: (row.id as string).startsWith('demo-'),
+          createdAt: (row.created_at as string) || undefined,
+          updatedAt: (row.updated_at as string) || undefined,
+        }));
+      }
     } catch {
-      // Ignore cloud profile update error during fallback
+      // cloud fetch fallback
+    }
+  }
+
+  // 2. Local JSON fallback
+  if (patients.length === 0) {
+    try {
+      if (fs.existsSync(PATIENTS_FILE)) {
+        patients = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
+      } else {
+        patients = [...INITIAL_PATIENTS];
+      }
+    } catch {
+      patients = [...INITIAL_PATIENTS];
+    }
+  }
+
+  // 3. Ensure baseline initial patients are always registered
+  for (const seed of INITIAL_PATIENTS) {
+    if (!patients.some((p) => p.id === seed.id || p.fullName.toLowerCase() === seed.fullName.toLowerCase())) {
+      patients.push(seed);
+    }
+  }
+
+  // 4. Compute metrics live from actual persisted records
+  const allRecords = await getAllMedicalRecords();
+
+  for (const p of patients) {
+    const patientRecs = allRecords.filter(
+      (r) =>
+        r.patientId === p.id ||
+        r.userId === p.id ||
+        (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === p.fullName.toLowerCase().trim())
+    );
+
+    let abnormalCount = 0;
+    let activeMeds = 0;
+    let lastVisit: string | null = null;
+    const conditionsSet = new Set<string>(p.chronicConditions || []);
+
+    for (const rec of patientRecs) {
+      for (const obs of rec.observations) {
+        if (['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW'].includes(obs.flag)) {
+          abnormalCount++;
+        }
+      }
+      for (const med of rec.medications) {
+        if (med.isActive) {
+          activeMeds++;
+        }
+      }
+      for (const diag of rec.diagnoses) {
+        if (diag.conditionName) {
+          conditionsSet.add(diag.conditionName);
+        }
+      }
+      const docDate = rec.documentDate || rec.uploadedAt.split('T')[0];
+      if (!lastVisit || new Date(docDate) > new Date(lastVisit)) {
+        lastVisit = docDate;
+      }
+    }
+
+    p.metrics = {
+      totalDocuments: patientRecs.length,
+      abnormalObservationsCount: abnormalCount,
+      activeMedicationsCount: activeMeds,
+      lastVisitDate: lastVisit,
+    };
+    p.chronicConditions = Array.from(conditionsSet);
+  }
+
+  // Sort real patients first, demo patients last
+  return patients.sort((a, b) => {
+    if (a.isDemo && !b.isDemo) return 1;
+    if (!a.isDemo && b.isDemo) return -1;
+    return a.fullName.localeCompare(b.fullName);
+  });
+}
+
+/**
+ * Get a single patient by ID with calculated live metrics.
+ */
+export async function getPatientById(id: string): Promise<PatientProfile | null> {
+  const all = await getAllPatients();
+  return all.find((p) => p.id === id) || null;
+}
+
+/**
+ * Create a new patient in the registry.
+ */
+export async function createPatient(data: Partial<PatientProfile>): Promise<PatientProfile> {
+  ensureStorageInitialized();
+
+  const id = data.id || `pat-${randomUUID().slice(0, 8)}`;
+  const randDigits = (len: number) => Array.from({ length: len }, () => Math.floor(Math.random() * 10)).join('');
+  const mockAbhaId = data.mockAbhaId || `${randDigits(2)}-${randDigits(4)}-${randDigits(4)}-${randDigits(4)}`;
+
+  const newPatient: PatientProfile = {
+    id,
+    fullName: data.fullName?.trim() || 'New Patient',
+    age: data.age != null ? Number(data.age) : null,
+    gender: data.gender ?? null,
+    bloodGroup: data.bloodGroup ?? null,
+    mockAbhaId,
+    allergies: data.allergies || [],
+    chronicConditions: data.chronicConditions || [],
+    emergencyContact: data.emergencyContact || undefined,
+    metrics: {
+      totalDocuments: 0,
+      abnormalObservationsCount: 0,
+      activeMedicationsCount: 0,
+      lastVisitDate: null,
+    },
+    isDemo: Boolean(data.isDemo),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 1. Local JSON write
+  try {
+    let list: PatientProfile[] = [];
+    if (fs.existsSync(PATIENTS_FILE)) {
+      list = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
+    } else {
+      list = [...INITIAL_PATIENTS];
+    }
+    const idx = list.findIndex((p) => p.id === id);
+    if (idx >= 0) {
+      list[idx] = newPatient;
+    } else {
+      list.unshift(newPatient);
+    }
+    fs.writeFileSync(PATIENTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch {
+    // Read-only serverless handling
+  }
+
+  // 2. Cloud Supabase write
+  if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
+    try {
+      await supabase.from('profiles').upsert(
+        {
+          id: newPatient.id,
+          full_name: newPatient.fullName,
+          age: newPatient.age,
+          gender: newPatient.gender,
+          blood_group: newPatient.bloodGroup,
+          mock_abha_id: newPatient.mockAbhaId,
+          allergies: newPatient.allergies,
+          chronic_conditions: newPatient.chronicConditions,
+          emergency_contact: newPatient.emergencyContact,
+          created_at: newPatient.createdAt,
+          updated_at: newPatient.updatedAt,
+        },
+        { onConflict: 'id' }
+      );
+    } catch {
+      // cloud error ignored
+    }
+  }
+
+  return newPatient;
+}
+
+/**
+ * Get active patient profile (for backwards compatibility).
+ */
+export async function getPatientProfile(): Promise<PatientProfile> {
+  const patients = await getAllPatients();
+  // Return first real patient if available, otherwise first demo patient
+  const nonDemo = patients.find((p) => !p.isDemo && p.metrics.totalDocuments > 0);
+  return nonDemo || patients[0] || DEMO_PATIENT;
+}
+
+/**
+ * Update patient profile (supports both updatePatientProfile(updated) and updatePatientProfile(id, updated)).
+ */
+export async function updatePatientProfile(
+  idOrUpdated: string | Partial<PatientProfile>,
+  maybeUpdated?: Partial<PatientProfile>
+): Promise<PatientProfile> {
+  ensureStorageInitialized();
+
+  let targetId: string;
+  let updates: Partial<PatientProfile>;
+
+  if (typeof idOrUpdated === 'string') {
+    targetId = idOrUpdated;
+    updates = maybeUpdated || {};
+  } else {
+    const defaultPat = await getPatientProfile();
+    targetId = idOrUpdated.id || defaultPat.id;
+    updates = idOrUpdated;
+  }
+
+  const existing = (await getPatientById(targetId)) || DEMO_PATIENT;
+  const merged: PatientProfile = {
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 1. Update local
+  try {
+    let list: PatientProfile[] = [];
+    if (fs.existsSync(PATIENTS_FILE)) {
+      list = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
+    } else {
+      list = [...INITIAL_PATIENTS];
+    }
+    const idx = list.findIndex((p) => p.id === targetId);
+    if (idx >= 0) {
+      list[idx] = merged;
+    } else {
+      list.push(merged);
+    }
+    fs.writeFileSync(PATIENTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    fs.writeFileSync(PROFILE_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  } catch {
+    // Ignore serverless write error
+  }
+
+  // 2. Update Supabase
+  if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
+    try {
+      await supabase.from('profiles').upsert(
+        {
+          id: merged.id,
+          full_name: merged.fullName,
+          age: merged.age,
+          gender: merged.gender,
+          blood_group: merged.bloodGroup,
+          mock_abha_id: merged.mockAbhaId,
+          allergies: merged.allergies,
+          chronic_conditions: merged.chronicConditions,
+          emergency_contact: merged.emergencyContact,
+          updated_at: merged.updatedAt,
+        },
+        { onConflict: 'id' }
+      );
+    } catch {
+      // cloud sync fallback
     }
   }
 
   return merged;
+}
+
+/**
+ * Delete a patient from registry.
+ */
+export async function deletePatient(id: string): Promise<boolean> {
+  ensureStorageInitialized();
+
+  // Local JSON delete
+  try {
+    if (fs.existsSync(PATIENTS_FILE)) {
+      const list: PatientProfile[] = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
+      const filtered = list.filter((p) => p.id !== id);
+      fs.writeFileSync(PATIENTS_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+    }
+  } catch {
+    // Ignore serverless
+  }
+
+  // Cloud delete
+  if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
+    try {
+      await supabase.from('profiles').delete().eq('id', id);
+    } catch {
+      // Ignore
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Calculates data-driven dashboard statistics across actual saved records and patients.
+ */
+export async function getDashboardMetrics(patientId?: string): Promise<DashboardStats> {
+  const allPatients = await getAllPatients();
+  const isAggregate = !patientId || patientId === 'all';
+  const selectedPatient = isAggregate ? null : allPatients.find((p) => p.id === patientId) || null;
+
+  const relevantRecords = await getAllMedicalRecords(undefined, isAggregate ? undefined : patientId);
+
+  const allObs = relevantRecords.flatMap((r) =>
+    r.observations.map((o) => ({
+      ...o,
+      documentId: r.id,
+      documentType: r.documentType,
+      documentDate: r.documentDate || r.uploadedAt.split('T')[0],
+      patientName: r.patientNameExtracted || (selectedPatient ? selectedPatient.fullName : 'Unassigned Patient'),
+      patientId: r.patientId || r.userId || (selectedPatient ? selectedPatient.id : undefined),
+    }))
+  );
+
+  const abnormalObs = allObs.filter((o) =>
+    ['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW'].includes(o.flag)
+  );
+
+  const activeMeds = relevantRecords.flatMap((r) => r.medications.filter((m) => m.isActive));
+
+  const conditionNames = new Set<string>();
+  if (selectedPatient) {
+    selectedPatient.chronicConditions?.forEach((c) => conditionNames.add(c));
+  } else {
+    allPatients.forEach((p) => p.chronicConditions?.forEach((c) => conditionNames.add(c)));
+  }
+  relevantRecords.forEach((r) => {
+    r.diagnoses.forEach((d) => {
+      if (d.conditionName) conditionNames.add(d.conditionName);
+    });
+  });
+
+  return {
+    totalPatients: allPatients.length,
+    totalDocuments: relevantRecords.length,
+    totalObservations: allObs.length,
+    abnormalObservationsCount: abnormalObs.length,
+    activeMedicationsCount: activeMeds.length,
+    chronicConditionsCount: conditionNames.size,
+    selectedPatientId: isAggregate ? null : patientId,
+    selectedPatient,
+    recentUploads: relevantRecords.slice(0, 5),
+    recentAbnormalities: abnormalObs.slice(0, 6),
+    isAggregate,
+  };
 }
 
 /**
@@ -579,6 +1122,7 @@ export async function resetDemoData(): Promise<void> {
   ensureStorageInitialized();
   fs.writeFileSync(RECORDS_FILE, JSON.stringify(DEMO_RECORDS, null, 2), 'utf-8');
   fs.writeFileSync(PROFILE_FILE, JSON.stringify(DEMO_PATIENT, null, 2), 'utf-8');
+  fs.writeFileSync(PATIENTS_FILE, JSON.stringify(INITIAL_PATIENTS, null, 2), 'utf-8');
 }
 
 /**
@@ -597,37 +1141,5 @@ async function getLocalRecordsRaw(): Promise<MedicalDocumentRecord[]> {
  * Recalculates metrics for the patient profile based on active records.
  */
 async function recalculatePatientMetrics(): Promise<void> {
-  const records = await getLocalRecordsRaw();
-  const profile = await getPatientProfile();
-
-  let abnormalCount = 0;
-  let activeMedsCount = 0;
-  let latestDate: string | null = null;
-
-  for (const rec of records) {
-    for (const obs of rec.observations) {
-      if (obs.flag === 'HIGH' || obs.flag === 'LOW' || obs.flag === 'CRITICAL_HIGH' || obs.flag === 'CRITICAL_LOW') {
-        abnormalCount++;
-      }
-    }
-    for (const med of rec.medications) {
-      if (med.isActive) {
-        activeMedsCount++;
-      }
-    }
-    if (rec.documentDate) {
-      if (!latestDate || new Date(rec.documentDate) > new Date(latestDate)) {
-        latestDate = rec.documentDate;
-      }
-    }
-  }
-
-  profile.metrics = {
-    totalDocuments: records.length,
-    abnormalObservationsCount: abnormalCount,
-    activeMedicationsCount: activeMedsCount,
-    lastVisitDate: latestDate,
-  };
-
-  fs.writeFileSync(PROFILE_FILE, JSON.stringify(profile, null, 2), 'utf-8');
+  await getAllPatients();
 }

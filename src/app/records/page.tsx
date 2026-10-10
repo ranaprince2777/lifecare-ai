@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   FileText,
   Search,
-  Filter,
   Calendar,
   Building,
   AlertTriangle,
@@ -14,8 +14,10 @@ import {
   RefreshCw,
   UploadCloud,
   ArrowRight,
+  ChevronDown,
+  User,
 } from 'lucide-react';
-import { MedicalDocumentRecord, DocumentType } from '@/lib/types/medical';
+import { MedicalDocumentRecord, DocumentType, PatientProfile } from '@/lib/types/medical';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 
 const DOC_TYPES: Array<'All' | DocumentType> = [
@@ -26,17 +28,38 @@ const DOC_TYPES: Array<'All' | DocumentType> = [
   'Discharge Summary',
 ];
 
-export default function RecordsPage() {
+function RecordsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialPatientId = searchParams.get('patientId') || 'all';
+
   const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
+  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId);
   const [loading, setLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<'All' | DocumentType>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyAbnormal, setOnlyAbnormal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Load patients for dropdown
+  useEffect(() => {
+    fetch('/api/patients')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.patients)) {
+          setPatients(data.patients);
+        }
+      })
+      .catch((err) => console.error('Failed to load patients:', err));
+  }, []);
+
+  // Load records based on selectedPatientId
   useEffect(() => {
     let ignore = false;
-    fetch('/api/records')
+    const query = selectedPatientId && selectedPatientId !== 'all' ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
+
+    fetch(`/api/records${query}`)
       .then((res) => res.json())
       .then((data) => {
         if (!ignore) {
@@ -50,10 +73,20 @@ export default function RecordsPage() {
           setLoading(false);
         }
       });
+
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [selectedPatientId]);
+
+  const handlePatientFilterChange = (id: string) => {
+    setSelectedPatientId(id);
+    if (id === 'all') {
+      router.push('/records');
+    } else {
+      router.push(`/records?patientId=${encodeURIComponent(id)}`);
+    }
+  };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -101,7 +134,7 @@ export default function RecordsPage() {
     }
 
     // Abnormal only filter
-    const abnormalCount = rec.observations.filter(
+    const abnormalCount = (rec.observations || []).filter(
       (o) => o.flag === 'HIGH' || o.flag === 'LOW' || o.flag === 'CRITICAL_HIGH' || o.flag === 'CRITICAL_LOW'
     ).length;
     if (onlyAbnormal && abnormalCount === 0) {
@@ -114,10 +147,11 @@ export default function RecordsPage() {
       const matchFile = rec.fileName.toLowerCase().includes(q);
       const matchProvider = rec.providerName?.toLowerCase().includes(q);
       const matchType = rec.documentType.toLowerCase().includes(q);
-      const matchObs = rec.observations.some((o) => o.testName.toLowerCase().includes(q));
-      const matchMed = rec.medications.some((m) => m.medicationName.toLowerCase().includes(q));
-      const matchDiag = rec.diagnoses.some((d) => d.conditionName.toLowerCase().includes(q));
-      return matchFile || matchProvider || matchType || matchObs || matchMed || matchDiag;
+      const matchPatient = (rec.patientNameExtracted || '').toLowerCase().includes(q);
+      const matchObs = (rec.observations || []).some((o) => o.testName.toLowerCase().includes(q));
+      const matchMed = (rec.medications || []).some((m) => m.medicationName.toLowerCase().includes(q));
+      const matchDiag = (rec.diagnoses || []).some((d) => d.conditionName.toLowerCase().includes(q));
+      return matchFile || matchProvider || matchType || matchPatient || matchObs || matchMed || matchDiag;
     }
 
     return true;
@@ -132,7 +166,7 @@ export default function RecordsPage() {
             Medical Records Archive
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Search, inspect, and manage all your digitized clinical documents.
+            Search, inspect, and manage digitized clinical documents across registered patients.
           </p>
         </div>
 
@@ -155,101 +189,100 @@ export default function RecordsPage() {
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        {/* Search input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by document name, clinic, test (e.g. Glucose), medication, or diagnosis..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 bg-slate-50/50"
-          />
-        </div>
-
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-slate-100">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-slate-500 font-medium mr-1 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" /> Type:
-            </span>
-            {DOC_TYPES.map((type) => (
-              <button
-                key={type}
-                onClick={() => setSelectedType(type)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition ${
-                  selectedType === type
-                    ? 'bg-teal-600 text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {type}
-              </button>
-            ))}
+      {/* Filter Toolbar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          {/* Search Bar */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by filename, lab test, medication, diagnosis, provider..."
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 font-medium select-none">
+          {/* Patient Selector */}
+          <div className="relative">
+            <select
+              value={selectedPatientId}
+              onChange={(e) => handlePatientFilterChange(e.target.value)}
+              className="appearance-none w-full md:w-56 px-3.5 py-2 pr-8 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+            >
+              <option value="all">👥 All Patients</option>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.isDemo ? '🧪 [Demo] ' : '👤 '}
+                  {p.fullName}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Abnormal Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-700 px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition shrink-0">
             <input
               type="checkbox"
               checked={onlyAbnormal}
               onChange={(e) => setOnlyAbnormal(e.target.checked)}
-              className="w-3.5 h-3.5 rounded text-red-600 focus:ring-red-500 border-slate-300"
+              className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 border-slate-300"
             />
-            <span className="text-red-700 font-semibold">Only Out-of-Range Reports</span>
+            <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+            <span>Only Out-of-Range Flags</span>
           </label>
         </div>
-      </div>
 
-      {/* Records Count & Status */}
-      <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-        <span>Showing {filtered.length} of {records.length} records</span>
-      </div>
-
-      {/* Loading state */}
-      {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse bg-white p-6 rounded-2xl border border-slate-200 h-32"></div>
+        {/* Document Type Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-slate-100 text-xs">
+          <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px] shrink-0">
+            Type:
+          </span>
+          {DOC_TYPES.map((type) => (
+            <button
+              key={type}
+              onClick={() => setSelectedType(type)}
+              className={`px-3 py-1.5 rounded-lg font-medium transition shrink-0 ${
+                selectedType === type
+                  ? 'bg-teal-600 text-white font-semibold shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {type}
+            </button>
           ))}
         </div>
+      </div>
+
+      {/* Records List */}
+      {loading ? (
+        <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="animate-spin w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
+          <p className="text-slate-500 text-xs font-medium">Loading clinical records archive...</p>
+        </div>
       ) : filtered.length === 0 ? (
-        /* Empty State */
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4 shadow-sm">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-            <FileText className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-900">No medical records match your criteria</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Try adjusting your search query, clearing filters, or upload a new medical document.
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3 pt-2">
-            <button
-              onClick={() => {
-                setSelectedType('All');
-                setSearchQuery('');
-                setOnlyAbnormal(false);
-              }}
-              className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Clear Filters
-            </button>
-            <Link
-              href="/upload"
-              className="px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700"
-            >
-              Upload New Document
-            </Link>
-          </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm max-w-lg mx-auto">
+          <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-900">No Documents Found</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-5">
+            {searchQuery || selectedType !== 'All' || onlyAbnormal || selectedPatientId !== 'all'
+              ? 'No medical records match your current search and filter criteria.'
+              : 'You have not uploaded any medical documents yet.'}
+          </p>
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-600 text-white font-medium text-xs hover:bg-teal-700 transition"
+          >
+            <UploadCloud className="w-4 h-4" />
+            <span>Upload First Document</span>
+          </Link>
         </div>
       ) : (
-        /* Records List */
         <div className="space-y-4">
           {filtered.map((doc) => {
-            const abnormalCount = doc.observations.filter(
+            const abnormalCount = (doc.observations || []).filter(
               (o) => o.flag === 'HIGH' || o.flag === 'LOW' || o.flag === 'CRITICAL_HIGH' || o.flag === 'CRITICAL_LOW'
             ).length;
 
@@ -266,6 +299,15 @@ export default function RecordsPage() {
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
                       {doc.documentDate || doc.uploadedAt.split('T')[0]}
                     </span>
+                    {doc.patientId && (
+                      <Link
+                        href={`/patients/${encodeURIComponent(doc.patientId)}`}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200 font-semibold hover:bg-teal-100 flex items-center gap-1 transition"
+                      >
+                        <User className="w-3 h-3" />
+                        <span>{doc.patientNameExtracted || doc.patientId}</span>
+                      </Link>
+                    )}
                     {doc.extractionMethod === 'demo_fixture' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-medium">
                         Demo Fixture
@@ -293,7 +335,7 @@ export default function RecordsPage() {
 
                   {/* Plain Language Preview */}
                   <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
-                    {doc.summary.summaryEn}
+                    {doc.summary?.summaryEn}
                   </p>
 
                   {/* Quick stats tags */}
@@ -304,13 +346,13 @@ export default function RecordsPage() {
                         {abnormalCount} out-of-range
                       </span>
                     )}
-                    {doc.medications.length > 0 && (
+                    {(doc.medications || []).length > 0 && (
                       <span className="flex items-center gap-1 font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
                         <Pill className="w-3 h-3" />
                         {doc.medications.length} medications
                       </span>
                     )}
-                    {doc.observations.length > 0 && (
+                    {(doc.observations || []).length > 0 && (
                       <span className="text-slate-500">
                         {doc.observations.length} observations
                       </span>
@@ -343,5 +385,17 @@ export default function RecordsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function RecordsPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center text-slate-500 text-sm">
+        Loading records archive...
+      </div>
+    }>
+      <RecordsContent />
+    </Suspense>
   );
 }

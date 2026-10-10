@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File | null;
     const clientApiKey = (formData.get('apiKey') as string | null) || req.headers.get('x-gemini-key') || undefined;
     const generateHindi = formData.get('generateHindi') === 'true';
+    const patientId = (formData.get('patientId') as string | null) || undefined;
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded. Please select a medical document.' }, { status: 400 });
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
     // 5. Construct full record
     const record: MedicalDocumentRecord = {
       id: recordId,
+      patientId: patientId || undefined,
       fileName: file.name,
       fileSize: validation.sizeBytes!,
       mimeType: validation.mimeType!,

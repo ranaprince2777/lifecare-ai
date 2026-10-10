@@ -201,13 +201,12 @@ function UploadContent() {
             <select
               value={selectedPatientId}
               onChange={(e) => setSelectedPatientId(e.target.value)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
+              className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 shadow-xs"
             >
-              <option value="auto">⚡ Auto-Detect / Match by Document Name</option>
+              <option value="auto">Auto-Detect / Match by Document Name</option>
               {patients.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.isDemo ? '🧪 [Demo] ' : '👤 '}
-                  {p.fullName} ({p.id})
+                  {p.fullName} {p.isDemo ? '[Demo]' : ''} ({p.id})
                 </option>
               ))}
             </select>

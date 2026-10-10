@@ -209,13 +209,12 @@ function RecordsContent() {
             <select
               value={selectedPatientId}
               onChange={(e) => handlePatientFilterChange(e.target.value)}
-              className="appearance-none w-full md:w-56 px-3.5 py-2 pr-8 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              className="appearance-none w-full md:w-56 px-3.5 py-2 pr-8 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer shadow-xs"
             >
-              <option value="all">👥 All Patients</option>
+              <option value="all">All Patients (Aggregate)</option>
               {patients.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.isDemo ? '🧪 [Demo] ' : '👤 '}
-                  {p.fullName}
+                  {p.fullName} {p.isDemo ? '[Demo]' : ''}
                 </option>
               ))}
             </select>

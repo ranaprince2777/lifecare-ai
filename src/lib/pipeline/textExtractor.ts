@@ -89,6 +89,68 @@ function rgbaToBmp(
 }
 
 /**
+ * Extracts legible text from images or scanned PDF documents using Gemini Multimodal Vision.
+ * Completely native, serverless-optimized (2s latency), with zero external binary or wasm dependencies.
+ */
+async function extractDocumentWithGemini(
+  buffer: Buffer,
+  mimeType = 'image/png'
+): Promise<TextExtractionResult> {
+  try {
+    const { getGeminiClient, PRIMARY_GEMINI_MODEL } = await import('../ai/geminiClient');
+    const ai = getGeminiClient();
+    if (!ai) {
+      return {
+        success: false,
+        text: '',
+        method: 'ocr_tesseract',
+        error: 'Gemini API client not initialized',
+      };
+    }
+
+    const base64 = buffer.toString('base64');
+    const response = await ai.models.generateContent({
+      model: PRIMARY_GEMINI_MODEL,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: 'Extract all legible medical text, clinical observations, laboratory test names, numerical values, units, reference ranges, flags, medications, dosages, vitals, patient name, and doctor remarks from this document verbatim. Return ONLY the raw extracted text.',
+            },
+            {
+              inlineData: {
+                mimeType,
+                data: base64,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const text = response.text?.trim() || '';
+    const quality = assessTextQuality(text);
+    return {
+      success: quality.isUsable,
+      text,
+      method: 'ocr_tesseract',
+      confidence: 0.98,
+      insufficientText: !quality.isUsable,
+      error: quality.isUsable ? undefined : quality.reason,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Gemini Vision extraction error';
+    return {
+      success: false,
+      text: '',
+      method: 'ocr_tesseract',
+      error: errorMsg,
+    };
+  }
+}
+
+/**
  * Extracts text from PDF using unpdf in pure JavaScript (serverless & Edge compatible).
  * Automatically extracts embedded raster images and falls back to OCR if the PDF is scanned.
  */
@@ -112,7 +174,16 @@ async function extractWithUnPdf(buffer: Buffer): Promise<TextExtractionResult> {
       };
     }
 
-    // If digital text is empty or unreadable (< 25 chars), inspect page raster images for OCR
+    // If digital text is empty or unreadable (< 25 chars), check if Gemini multimodal can extract scanned content
+    const scannedGeminiRes = await extractDocumentWithGemini(buffer, 'application/pdf');
+    if (scannedGeminiRes.success && scannedGeminiRes.text.trim().length > 25) {
+      return {
+        ...scannedGeminiRes,
+        pageCount: res.totalPages,
+      };
+    }
+
+    // Secondary fallback: inspect page raster images for OCR
     let combinedOcrText = '';
     let hasScannedImages = false;
     const maxPages = Math.min(res.totalPages || 1, 3);
@@ -128,7 +199,7 @@ async function extractWithUnPdf(buffer: Buffer): Promise<TextExtractionResult> {
           );
           const isRgba = primaryImg.channels === 4;
           const bmpBuf = rgbaToBmp(primaryImg.data, primaryImg.width, primaryImg.height, isRgba);
-          let ocrRes = await extractImageWithGemini(bmpBuf, 'image/bmp');
+          let ocrRes = await extractDocumentWithGemini(bmpBuf, 'image/bmp');
           if (!ocrRes.success || !ocrRes.text) {
             ocrRes = await extractImageWithTesseract(bmpBuf);
           }
@@ -335,67 +406,7 @@ async function extractImageWithTesseract(buffer: Buffer): Promise<TextExtraction
   }
 }
 
-/**
- * Extracts legible text from images or rasterized PDF scans using Gemini Multimodal Vision.
- * Completely native, serverless-optimized (2s latency), with zero external binary or wasm dependencies.
- */
-async function extractImageWithGemini(
-  buffer: Buffer,
-  mimeType = 'image/png'
-): Promise<TextExtractionResult> {
-  try {
-    const { getGeminiClient, PRIMARY_GEMINI_MODEL } = await import('../ai/geminiClient');
-    const ai = getGeminiClient();
-    if (!ai) {
-      return {
-        success: false,
-        text: '',
-        method: 'ocr_tesseract',
-        error: 'Gemini API client not initialized',
-      };
-    }
 
-    const base64 = buffer.toString('base64');
-    const response = await ai.models.generateContent({
-      model: PRIMARY_GEMINI_MODEL,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: 'Extract all legible medical text, clinical observations, laboratory test names, numerical values, units, reference ranges, flags, medications, dosages, vitals, patient name, and doctor remarks from this document verbatim. Return ONLY the raw extracted text.',
-            },
-            {
-              inlineData: {
-                mimeType,
-                data: base64,
-              },
-            },
-          ],
-        },
-      ],
-    });
-
-    const text = response.text?.trim() || '';
-    const quality = assessTextQuality(text);
-    return {
-      success: quality.isUsable,
-      text,
-      method: 'ocr_tesseract',
-      confidence: 0.98,
-      insufficientText: !quality.isUsable,
-      error: quality.isUsable ? undefined : quality.reason,
-    };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Gemini Vision extraction error';
-    return {
-      success: false,
-      text: '',
-      method: 'ocr_tesseract',
-      error: errorMsg,
-    };
-  }
-}
 
 /**
  * Primary text extraction router:
@@ -467,7 +478,7 @@ export async function extractDocumentText(
 
   if (mimeType.startsWith('image/')) {
     // 1. Primary high-performance multimodal OCR via Gemini Vision (fast, serverless-native)
-    const geminiRes = await extractImageWithGemini(buffer, mimeType);
+    const geminiRes = await extractDocumentWithGemini(buffer, mimeType);
     if (geminiRes.success && geminiRes.text.trim().length > 25) {
       return geminiRes;
     }

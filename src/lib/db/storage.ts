@@ -341,6 +341,25 @@ export function dbDocumentToRecord(
 // CRUD OPERATIONS (Dual Persistence: Supabase Cloud + Local JSON Fallback)
 // ============================================================================
 
+// Helper to prevent database queries from stalling requests beyond a safe ceiling
+async function withTimeout<T>(
+  promise: PromiseLike<T> | Promise<T>,
+  timeoutMs: number,
+  fallbackValue: T
+): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallbackValue), timeoutMs);
+  });
+  return Promise.race([
+    Promise.resolve(promise).then((res) => {
+      clearTimeout(timer);
+      return res;
+    }),
+    timeoutPromise,
+  ]);
+}
+
 /**
  * Get all medical documents sorted by date (newest first).
  */
@@ -360,7 +379,11 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
         query = query.or(`user_id.eq.${requestUserId},id.like.demo-%`);
       }
 
-      const { data: docs, error: docError } = await query;
+      const { data: docs, error: docError } = await withTimeout<{ data: DbMedicalDocument[] | null; error: unknown }>(
+        query as unknown as PromiseLike<{ data: DbMedicalDocument[] | null; error: unknown }>,
+        4500,
+        { data: null, error: new Error('Supabase query timed out') }
+      );
 
       if (!docError && docs) {
         if (docs.length === 0) {
@@ -368,13 +391,22 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
         }
         const docIds = docs.map((d: DbMedicalDocument) => d.id);
 
-        // Fetch decomposed children in parallel
-        const [obsRes, medRes, diagRes, sumRes] = await Promise.all([
-          supabase.from('extracted_observations').select('*').in('document_id', docIds),
-          supabase.from('medications').select('*').in('document_id', docIds),
-          supabase.from('diagnoses').select('*').in('document_id', docIds),
-          supabase.from('document_summaries').select('*').in('document_id', docIds),
-        ]);
+        // Fetch decomposed children in parallel with timeout protection
+        const [obsRes, medRes, diagRes, sumRes] = await withTimeout<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>(
+          Promise.all([
+            supabase.from('extracted_observations').select('*').in('document_id', docIds),
+            supabase.from('medications').select('*').in('document_id', docIds),
+            supabase.from('diagnoses').select('*').in('document_id', docIds),
+            supabase.from('document_summaries').select('*').in('document_id', docIds),
+          ]) as unknown as PromiseLike<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>,
+          4500,
+          [
+            { data: null, error: new Error('Observations query timed out') },
+            { data: null, error: new Error('Medications query timed out') },
+            { data: null, error: new Error('Diagnoses query timed out') },
+            { data: null, error: new Error('Summaries query timed out') },
+          ]
+        );
 
         const obsMap = new Map<string, ExtractedObservation[]>();
         (obsRes.data || []).forEach((row: Record<string, unknown>) => {
@@ -498,7 +530,7 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
   // Local JSON Fallback Engine
   try {
     const raw = fs.readFileSync(RECORDS_FILE, 'utf-8');
-    const records: MedicalDocumentRecord[] = JSON.parse(raw).map(enrichRecordPatientId);
+    const records: MedicalDocumentRecord[] = (JSON.parse(raw) as MedicalDocumentRecord[]).map(enrichRecordPatientId);
 
     let authorized = records.filter((r) => verifyRecordAccess(r, requestUserId));
     if (patientId && patientId !== 'all') {
@@ -755,13 +787,17 @@ interface CacheEntry<T> {
 let patientsCache: CacheEntry<PatientProfile[]> | null = null;
 const PATIENTS_CACHE_TTL_MS = 15_000;
 
+const dashboardStatsCache = new Map<string, CacheEntry<DashboardStats>>();
+const DASHBOARD_CACHE_TTL_MS = 15_000;
+
 export function invalidatePatientsCache(): void {
   patientsCache = null;
+  dashboardStatsCache.clear();
 }
 
 /**
  * Get all registered patients with real-time calculated metrics from saved documents.
- * High-performance: uses lightweight counting queries and server-side memory caching.
+ * High-performance: uses lightweight counting queries, unified parallel fetching, and server-side memory caching.
  */
 export async function getAllPatients(): Promise<PatientProfile[]> {
   ensureStorageInitialized();
@@ -772,17 +808,34 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
   }
 
   let patients: PatientProfile[] = [];
+  let docSummaries: Array<{ id: string; patientId?: string; patientName?: string; docDate: string }> = [];
+  const abnormalObsDocIds = new Set<string>();
+  const activeMedDocIds = new Map<string, number>();
+  const diagMap = new Map<string, string[]>();
 
-  // 1. Try Supabase profiles
+  // 1. Single unified parallel fetch with strict 4.5s timeout protection against serverless cold hangs
   if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [profilesRes, docsRes, obsRes, medsRes, diagRes] = await withTimeout<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>(
+        Promise.all([
+          supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+          supabase.from('medical_documents').select('id, user_id, file_path, patient_name_extracted, document_date, created_at'),
+          supabase.from('extracted_observations').select('document_id, flag').in('flag', ['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW']),
+          supabase.from('medications').select('document_id').eq('is_active', true),
+          supabase.from('diagnoses').select('document_id, condition_name'),
+        ]) as unknown as PromiseLike<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>,
+        4500,
+        [
+          { data: null, error: new Error('Profiles query timed out') },
+          { data: null, error: new Error('Documents query timed out') },
+          { data: null, error: new Error('Observations query timed out') },
+          { data: null, error: new Error('Medications query timed out') },
+          { data: null, error: new Error('Diagnoses query timed out') },
+        ]
+      );
 
-      if (!error && data && data.length > 0) {
-        patients = data.map((row: Record<string, unknown>) => ({
+      if (!profilesRes.error && profilesRes.data && profilesRes.data.length > 0) {
+        patients = profilesRes.data.map((row: Record<string, unknown>) => ({
           id: (row.id as string) || '',
           fullName: (row.full_name as string) || 'Unnamed Patient',
           age: row.age != null ? Number(row.age) : null,
@@ -803,46 +856,6 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
           updatedAt: (row.updated_at as string) || undefined,
         }));
       }
-    } catch {
-      // cloud fetch fallback
-    }
-  }
-
-  // 2. Local JSON fallback
-  if (patients.length === 0) {
-    try {
-      if (fs.existsSync(PATIENTS_FILE)) {
-        patients = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
-      } else {
-        patients = [...INITIAL_PATIENTS];
-      }
-    } catch {
-      patients = [...INITIAL_PATIENTS];
-    }
-  }
-
-  // 3. Ensure baseline initial patients are always registered
-  for (const seed of INITIAL_PATIENTS) {
-    if (!patients.some((p) => p.id === seed.id || p.fullName.toLowerCase() === seed.fullName.toLowerCase())) {
-      patients.push(seed);
-    }
-  }
-
-  // 4. Compute metrics live from actual persisted records using lightweight queries
-  // (selects only counting fields, completely avoiding transfer of megabytes of summaries and raw text)
-  let docSummaries: Array<{ id: string; patientId?: string; patientName?: string; docDate: string }> = [];
-  const abnormalObsDocIds = new Set<string>();
-  const activeMedDocIds = new Map<string, number>();
-  const diagMap = new Map<string, string[]>();
-
-  if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
-    try {
-      const [docsRes, obsRes, medsRes, diagRes] = await Promise.all([
-        supabase.from('medical_documents').select('id, user_id, file_path, patient_name_extracted, document_date, created_at'),
-        supabase.from('extracted_observations').select('document_id, flag').in('flag', ['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW']),
-        supabase.from('medications').select('document_id').eq('is_active', true),
-        supabase.from('diagnoses').select('document_id, condition_name'),
-      ]);
 
       if (docsRes.data) {
         docSummaries = docsRes.data.map((d: Record<string, unknown>) => {
@@ -880,7 +893,27 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
         }
       });
     } catch {
-      // cloud fetch failed, fall back to local
+      // cloud fetch fallback
+    }
+  }
+
+  // 2. Local JSON fallback
+  if (patients.length === 0) {
+    try {
+      if (fs.existsSync(PATIENTS_FILE)) {
+        patients = JSON.parse(fs.readFileSync(PATIENTS_FILE, 'utf-8'));
+      } else {
+        patients = [...INITIAL_PATIENTS];
+      }
+    } catch {
+      patients = [...INITIAL_PATIENTS];
+    }
+  }
+
+  // 3. Ensure baseline initial patients are always registered
+  for (const seed of INITIAL_PATIENTS) {
+    if (!patients.some((p) => p.id === seed.id || p.fullName.toLowerCase() === seed.fullName.toLowerCase())) {
+      patients.push(seed);
     }
   }
 
@@ -1169,8 +1202,15 @@ export async function deletePatient(id: string): Promise<boolean> {
 
 /**
  * Calculates data-driven dashboard statistics across actual saved records and patients.
+ * High-performance: cached in memory with fast invalidation on data changes.
  */
 export async function getDashboardMetrics(patientId?: string): Promise<DashboardStats> {
+  const cacheKey = patientId || 'all';
+  const cached = dashboardStatsCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < DASHBOARD_CACHE_TTL_MS)) {
+    return cached.data;
+  }
+
   const allPatients = await getAllPatients();
   const isAggregate = !patientId || patientId === 'all';
   const selectedPatient = isAggregate ? null : allPatients.find((p) => p.id === patientId) || null;
@@ -1206,7 +1246,7 @@ export async function getDashboardMetrics(patientId?: string): Promise<Dashboard
     });
   });
 
-  return {
+  const stats: DashboardStats = {
     totalPatients: allPatients.length,
     totalDocuments: relevantRecords.length,
     totalObservations: allObs.length,
@@ -1219,6 +1259,13 @@ export async function getDashboardMetrics(patientId?: string): Promise<Dashboard
     recentAbnormalities: abnormalObs.slice(0, 6),
     isAggregate,
   };
+
+  dashboardStatsCache.set(cacheKey, {
+    data: stats,
+    timestamp: Date.now(),
+  });
+
+  return stats;
 }
 
 /**
@@ -1229,6 +1276,7 @@ export async function resetDemoData(): Promise<void> {
   fs.writeFileSync(RECORDS_FILE, JSON.stringify(DEMO_RECORDS, null, 2), 'utf-8');
   fs.writeFileSync(PROFILE_FILE, JSON.stringify(DEMO_PATIENT, null, 2), 'utf-8');
   fs.writeFileSync(PATIENTS_FILE, JSON.stringify(INITIAL_PATIENTS, null, 2), 'utf-8');
+  invalidatePatientsCache();
 }
 
 /**

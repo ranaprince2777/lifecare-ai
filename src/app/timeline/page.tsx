@@ -16,6 +16,12 @@ import {
   User,
 } from 'lucide-react';
 import { MedicalDocumentRecord, PatientProfile } from '@/lib/types/medical';
+import {
+  getCachedPatients,
+  setCachedPatients,
+  getCachedRecords,
+  setCachedRecords,
+} from '@/lib/cache/clientCache';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 import LabTrendsComparison from '@/components/LabTrendsComparison';
 
@@ -24,10 +30,10 @@ function TimelineContent() {
   const searchParams = useSearchParams();
   const initialPatientId = searchParams.get('patientId') || 'all';
 
-  const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [records, setRecords] = useState<MedicalDocumentRecord[]>(() => getCachedRecords(initialPatientId));
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('All');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,6 +46,7 @@ function TimelineContent() {
       .then((data) => {
         if (data.success && Array.isArray(data.patients)) {
           setPatients(data.patients);
+          setCachedPatients(data.patients);
         }
       })
       .catch((err) => console.error('Failed to load patients for timeline:', err));
@@ -49,12 +56,13 @@ function TimelineContent() {
   useEffect(() => {
     async function fetchTimeline() {
       try {
-        setLoading(true);
         const query = selectedPatientId && selectedPatientId !== 'all' ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
         const res = await fetch(`/api/records${query}`);
         if (res.ok) {
           const data = await res.json();
-          setRecords(data.records || []);
+          const recs = data.records || [];
+          setRecords(recs);
+          setCachedRecords(recs, selectedPatientId);
         }
       } catch (err) {
         console.error('Failed to load timeline records:', err);
@@ -68,6 +76,12 @@ function TimelineContent() {
 
   const handlePatientFilterChange = (id: string) => {
     setSelectedPatientId(id);
+    const cached = getCachedRecords(id);
+    if (cached.length > 0) {
+      setRecords(cached);
+    } else {
+      setLoading(true);
+    }
     if (id === 'all') {
       router.push('/timeline');
     } else {
@@ -194,7 +208,7 @@ function TimelineContent() {
         <LabTrendsComparison records={records} />
       ) : (
         <>
-          {loading ? (
+          {loading && records.length === 0 ? (
             <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
               <div className="animate-spin w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
               <p className="text-slate-500 text-xs font-medium">Loading clinical timeline...</p>

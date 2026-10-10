@@ -20,16 +20,17 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { PatientProfile } from '@/lib/types/medical';
+import { getCachedPatients, setCachedPatients, getCachedProfile, setCachedProfile } from '@/lib/cache/clientCache';
 
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedPatientId = searchParams.get('patientId') || '';
 
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
-  const [profile, setProfile] = useState<PatientProfile | null>(null);
-  const [selectedPatientId, setSelectedPatientId] = useState<string>(requestedPatientId);
-  const [loading, setLoading] = useState(true);
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
+  const [profile, setProfile] = useState<PatientProfile | null>(() => getCachedProfile(requestedPatientId));
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(() => requestedPatientId || getCachedProfile(requestedPatientId).id);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedAbha, setCopiedAbha] = useState(false);
@@ -52,6 +53,7 @@ function ProfileContent() {
           const patData = await patRes.json();
           if (patData.success && Array.isArray(patData.patients)) {
             setPatients(patData.patients);
+            setCachedPatients(patData.patients);
           }
         }
 
@@ -59,19 +61,29 @@ function ProfileContent() {
           const profData = await profRes.json();
           if (profData.profile) {
             setProfile(profData.profile);
+            setCachedProfile(profData.profile);
             setSelectedPatientId(profData.profile.id);
             setProfileError(null);
           } else {
-            setProfileError('Patient profile not found.');
+            setProfile((curr) => {
+              if (!curr) setProfileError('Patient profile not found.');
+              return curr;
+            });
           }
         } else {
-          setProfileError('Failed to load patient profile.');
+          setProfile((curr) => {
+            if (!curr) setProfileError('Failed to load patient profile.');
+            return curr;
+          });
         }
       })
       .catch((err: unknown) => {
         if (!ignore && (err as Error)?.name !== 'AbortError') {
           console.error('Failed to load profile:', err);
-          setProfileError('Unable to connect to profile service. Please retry.');
+          setProfile((curr) => {
+            if (!curr) setProfileError('Unable to connect to profile service. Please retry.');
+            return curr;
+          });
         }
       })
       .finally(() => {

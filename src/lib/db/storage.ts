@@ -405,7 +405,7 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
 
       const { data: docs, error: docError } = await withTimeout<{ data: DbMedicalDocument[] | null; error: unknown }>(
         query as unknown as PromiseLike<{ data: DbMedicalDocument[] | null; error: unknown }>,
-        4500,
+        1500,
         { data: null, error: new Error('Supabase query timed out') }
       );
 
@@ -423,7 +423,7 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
             supabase.from('diagnoses').select('*').in('document_id', docIds),
             supabase.from('document_summaries').select('*').in('document_id', docIds),
           ]) as unknown as PromiseLike<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>,
-          4500,
+          1500,
           [
             { data: null, error: new Error('Observations query timed out') },
             { data: null, error: new Error('Medications query timed out') },
@@ -849,7 +849,7 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
           supabase.from('medications').select('document_id').eq('is_active', true),
           supabase.from('diagnoses').select('document_id, condition_name'),
         ]) as unknown as PromiseLike<Array<{ data: Record<string, unknown>[] | null; error: unknown }>>,
-        4500,
+        1500,
         [
           { data: null, error: new Error('Profiles query timed out') },
           { data: null, error: new Error('Documents query timed out') },

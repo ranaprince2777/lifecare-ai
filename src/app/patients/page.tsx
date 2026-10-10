@@ -16,10 +16,11 @@ import {
   Tag,
 } from 'lucide-react';
 import { PatientProfile } from '@/lib/types/medical';
+import { getCachedPatients, setCachedPatients } from '@/lib/cache/clientCache';
 
 export default function PatientsPage() {
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'real' | 'demo'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -40,18 +41,21 @@ export default function PatientsPage() {
 
   const refreshPatients = async () => {
     try {
-      setLoading(true);
+      if (patients.length === 0) setLoading(true);
       setFetchError(null);
       const res = await fetch('/api/patients');
       const data = await res.json();
       if (res.ok && data.success && Array.isArray(data.patients)) {
         setPatients(data.patients);
-      } else {
+        setCachedPatients(data.patients);
+      } else if (patients.length === 0) {
         setFetchError(data.error || 'Failed to load patient directory.');
       }
     } catch (err: unknown) {
       console.error('Failed to reload patients', err);
-      setFetchError('Unable to connect to patient directory.');
+      if (patients.length === 0) {
+        setFetchError('Unable to connect to patient directory.');
+      }
     } finally {
       setLoading(false);
     }
@@ -68,15 +72,26 @@ export default function PatientsPage() {
         if (ignore) return;
         if (res.ok && data.success && Array.isArray(data.patients)) {
           setPatients(data.patients);
+          setCachedPatients(data.patients);
           setFetchError(null);
         } else {
-          setFetchError(data.error || 'Failed to load patient directory.');
+          setPatients((current) => {
+            if (current.length === 0) {
+              setFetchError(data.error || 'Failed to load patient directory.');
+            }
+            return current;
+          });
         }
       })
       .catch((err: unknown) => {
         if (!ignore && (err as Error)?.name !== 'AbortError') {
           console.error('Failed to load patients', err);
-          setFetchError('Unable to connect to patient directory. Please check connection and retry.');
+          setPatients((current) => {
+            if (current.length === 0) {
+              setFetchError('Unable to connect to patient directory. Please check connection and retry.');
+            }
+            return current;
+          });
         }
       })
       .finally(() => {
@@ -243,7 +258,7 @@ export default function PatientsPage() {
         </div>
 
         {/* Patients Grid */}
-        {loading ? (
+        {loading && patients.length === 0 ? (
           <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
             <div className="animate-spin w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
             <p className="text-slate-500 text-sm font-medium">Loading patient directory...</p>

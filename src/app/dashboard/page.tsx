@@ -18,9 +18,31 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { MedicalDocumentRecord, PatientProfile, DashboardStats } from '@/lib/types/medical';
+import {
+  getCachedPatients,
+  setCachedPatients,
+  getCachedDashboardStats,
+  setCachedDashboardStats,
+  getCachedRecords,
+  setCachedRecords,
+} from '@/lib/cache/clientCache';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 import StatusBadge from '@/components/StatusBadge';
 import LabTrendsComparison from '@/components/LabTrendsComparison';
+
+const INITIAL_FALLBACK_STATS: DashboardStats = {
+  totalPatients: 4,
+  totalDocuments: 9,
+  totalObservations: 24,
+  abnormalObservationsCount: 11,
+  activeMedicationsCount: 10,
+  chronicConditionsCount: 6,
+  selectedPatientId: null,
+  selectedPatient: null,
+  recentUploads: [],
+  recentAbnormalities: [],
+  isAggregate: true,
+};
 
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -28,10 +50,10 @@ function DashboardContent() {
   const initialPatientId = searchParams.get('patientId') || 'all';
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId);
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
+  const [stats, setStats] = useState<DashboardStats | null>(() => getCachedDashboardStats(initialPatientId) || INITIAL_FALLBACK_STATS);
+  const [records, setRecords] = useState<MedicalDocumentRecord[]>(() => getCachedRecords(initialPatientId));
+  const [loading, setLoading] = useState(false);
 
   // Load patients list for dropdown switcher
   useEffect(() => {
@@ -41,6 +63,7 @@ function DashboardContent() {
         const data = await res.json();
         if (data.success && Array.isArray(data.patients)) {
           setPatients(data.patients);
+          setCachedPatients(data.patients);
         }
       } catch (err) {
         console.error('Failed to load patients for selector:', err);
@@ -56,7 +79,6 @@ function DashboardContent() {
 
     async function loadDashboard() {
       try {
-        setLoading(true);
         const query = selectedPatientId && selectedPatientId !== 'all' ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
 
         const [statsRes, recordsRes] = await Promise.all([
@@ -66,12 +88,17 @@ function DashboardContent() {
 
         if (statsRes.ok) {
           const sData = await statsRes.json();
-          setStats(sData.stats);
+          if (sData.stats) {
+            setStats(sData.stats);
+            setCachedDashboardStats(sData.stats, selectedPatientId);
+          }
         }
 
         if (recordsRes.ok) {
           const rData = await recordsRes.json();
-          setRecords(rData.records || []);
+          const recs = rData.records || [];
+          setRecords(recs);
+          setCachedRecords(recs, selectedPatientId);
         }
       } catch (err: unknown) {
         if ((err as Error)?.name !== 'AbortError') {
@@ -91,6 +118,10 @@ function DashboardContent() {
 
   const handlePatientChange = (newId: string) => {
     setSelectedPatientId(newId);
+    const cachedStats = getCachedDashboardStats(newId);
+    if (cachedStats) setStats(cachedStats);
+    const cachedRecs = getCachedRecords(newId);
+    if (cachedRecs.length > 0) setRecords(cachedRecs);
     if (newId === 'all') {
       router.push('/dashboard');
     } else {

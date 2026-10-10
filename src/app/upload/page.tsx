@@ -22,6 +22,8 @@ import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 
 type ProcessingStep = 'idle' | 'validating' | 'extracting' | 'structuring' | 'saving' | 'done' | 'error';
 
+import { getCachedPatients, setCachedPatients, clearClientCache } from '@/lib/cache/clientCache';
+
 function UploadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -41,7 +43,7 @@ function UploadContent() {
   const [serverKeyConfigured, setServerKeyConfigured] = useState<boolean | null>(null);
 
   // Patient Registry State
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
   const [selectedPatientId, setSelectedPatientId] = useState<string>(preselectedPatientId);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ function UploadContent() {
       .then((data) => {
         if (data.success && Array.isArray(data.patients)) {
           setPatients(data.patients);
+          setCachedPatients(data.patients);
         }
       })
       .catch((err) => console.error('Failed to load patients list:', err));
@@ -155,6 +158,7 @@ function UploadContent() {
       setStatusMessage('Structuring medical observations and generating plain-language summary...');
 
       setStep('done');
+      clearClientCache();
       setProcessedRecord(data.record);
 
       if (data.warning) {

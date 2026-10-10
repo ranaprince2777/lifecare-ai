@@ -26,7 +26,14 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ records, total: records.length });
+    return NextResponse.json(
+      { records, total: records.length },
+      {
+        headers: {
+          'Cache-Control': 'private, s-maxage=5, stale-while-revalidate=30',
+        },
+      }
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to fetch records';
     return NextResponse.json({ error: msg }, { status: 500 });

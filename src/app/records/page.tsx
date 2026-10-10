@@ -18,6 +18,12 @@ import {
   User,
 } from 'lucide-react';
 import { MedicalDocumentRecord, DocumentType, PatientProfile } from '@/lib/types/medical';
+import {
+  getCachedPatients,
+  setCachedPatients,
+  getCachedRecords,
+  setCachedRecords,
+} from '@/lib/cache/clientCache';
 import DocumentTypeBadge from '@/components/DocumentTypeBadge';
 
 const DOC_TYPES: Array<'All' | DocumentType> = [
@@ -33,10 +39,10 @@ function RecordsContent() {
   const searchParams = useSearchParams();
   const initialPatientId = searchParams.get('patientId') || 'all';
 
-  const [records, setRecords] = useState<MedicalDocumentRecord[]>([]);
-  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [records, setRecords] = useState<MedicalDocumentRecord[]>(() => getCachedRecords(initialPatientId));
+  const [patients, setPatients] = useState<PatientProfile[]>(() => getCachedPatients());
   const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatientId);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<'All' | DocumentType>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyAbnormal, setOnlyAbnormal] = useState(false);
@@ -49,6 +55,7 @@ function RecordsContent() {
       .then((data) => {
         if (data.success && Array.isArray(data.patients)) {
           setPatients(data.patients);
+          setCachedPatients(data.patients);
         }
       })
       .catch((err) => console.error('Failed to load patients:', err));
@@ -63,7 +70,9 @@ function RecordsContent() {
       .then((res) => res.json())
       .then((data) => {
         if (!ignore) {
-          setRecords(data.records || []);
+          const recs = data.records || [];
+          setRecords(recs);
+          setCachedRecords(recs, selectedPatientId);
           setLoading(false);
         }
       })
@@ -81,6 +90,12 @@ function RecordsContent() {
 
   const handlePatientFilterChange = (id: string) => {
     setSelectedPatientId(id);
+    const cached = getCachedRecords(id);
+    if (cached.length > 0) {
+      setRecords(cached);
+    } else {
+      setLoading(true);
+    }
     if (id === 'all') {
       router.push('/records');
     } else {
@@ -256,7 +271,7 @@ function RecordsContent() {
       </div>
 
       {/* Records List */}
-      {loading ? (
+      {loading && records.length === 0 ? (
         <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="animate-spin w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
           <p className="text-slate-500 text-xs font-medium">Loading clinical records archive...</p>

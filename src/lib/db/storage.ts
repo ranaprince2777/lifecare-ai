@@ -360,11 +360,35 @@ async function withTimeout<T>(
   ]);
 }
 
+// In-memory cache for ultra-fast data retrieval and reduced cloud roundtrips
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const recordsCache = new Map<string, CacheEntry<MedicalDocumentRecord[]>>();
+const RECORDS_CACHE_TTL_MS = 15_000;
+
+export function invalidateRecordsCache(): void {
+  recordsCache.clear();
+}
+
 /**
  * Get all medical documents sorted by date (newest first).
  */
 export async function getAllMedicalRecords(requestUserId?: string, patientId?: string): Promise<MedicalDocumentRecord[]> {
   ensureStorageInitialized();
+
+  const cacheKey = `${requestUserId || 'anon'}:${patientId || 'all'}`;
+  const cached = recordsCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < RECORDS_CACHE_TTL_MS)) {
+    return cached.data;
+  }
+
+  const cacheAndReturn = (results: MedicalDocumentRecord[]) => {
+    recordsCache.set(cacheKey, { data: results, timestamp: Date.now() });
+    return results;
+  };
 
   // If Supabase is configured and not strictly set to local mode, attempt cloud query
   if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
@@ -387,7 +411,7 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
 
       if (!docError && docs) {
         if (docs.length === 0) {
-          return [];
+          return cacheAndReturn([]);
         }
         const docIds = docs.map((d: DbMedicalDocument) => d.id);
 
@@ -512,15 +536,17 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
         }
 
         if (patientId && patientId !== 'all') {
-          return records.filter(
-            (r) =>
-              r.patientId === patientId ||
-              r.userId === patientId ||
-              (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === patientId.toLowerCase().trim())
+          return cacheAndReturn(
+            records.filter(
+              (r) =>
+                r.patientId === patientId ||
+                r.userId === patientId ||
+                (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === patientId.toLowerCase().trim())
+            )
           );
         }
 
-        return records;
+        return cacheAndReturn(records);
       }
     } catch {
       // Cloud read failed or table does not exist yet; fall back smoothly to local JSON
@@ -542,11 +568,13 @@ export async function getAllMedicalRecords(requestUserId?: string, patientId?: s
       );
     }
 
-    return authorized.sort((a, b) => {
-      const dateA = a.documentDate || a.uploadedAt;
-      const dateB = b.documentDate || b.uploadedAt;
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
-    });
+    return cacheAndReturn(
+      authorized.sort((a, b) => {
+        const dateA = a.documentDate || a.uploadedAt;
+        const dateB = b.documentDate || b.uploadedAt;
+        return new Date(dateB).getTime() - new Date(dateA).getTime();
+      })
+    );
   } catch {
     return DEMO_RECORDS;
   }
@@ -780,10 +808,6 @@ export function enrichRecordPatientId(record: MedicalDocumentRecord): MedicalDoc
 }
 
 // In-memory cache for ultra-fast patient retrieval and reduced database roundtrips
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-}
 let patientsCache: CacheEntry<PatientProfile[]> | null = null;
 const PATIENTS_CACHE_TTL_MS = 15_000;
 
@@ -793,6 +817,7 @@ const DASHBOARD_CACHE_TTL_MS = 15_000;
 export function invalidatePatientsCache(): void {
   patientsCache = null;
   dashboardStatsCache.clear();
+  recordsCache.clear();
 }
 
 /**

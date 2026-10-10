@@ -33,45 +33,80 @@ function ProfileContent() {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedAbha, setCopiedAbha] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Load patient list
   useEffect(() => {
-    fetch('/api/patients')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.patients)) {
-          setPatients(data.patients);
-        }
-      })
-      .catch((err) => console.error('Failed to load patients for profile:', err));
-  }, []);
+    let ignore = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
 
-  // Load profile for selected patient or default
-  useEffect(() => {
-    async function fetchProfile() {
-      try {
-        setLoading(true);
-        const query = selectedPatientId ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
-        const res = await fetch(`/api/profile${query}`);
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data.profile);
-          if (data.profile?.id) {
-            setSelectedPatientId(data.profile.id);
+    const query = requestedPatientId ? `?patientId=${encodeURIComponent(requestedPatientId)}` : '';
+
+    Promise.all([
+      fetch('/api/patients', { signal: controller.signal }),
+      fetch(`/api/profile${query}`, { signal: controller.signal }),
+    ])
+      .then(async ([patRes, profRes]) => {
+        if (ignore) return;
+        if (patRes.ok) {
+          const patData = await patRes.json();
+          if (patData.success && Array.isArray(patData.patients)) {
+            setPatients(patData.patients);
           }
         }
-      } catch (err) {
-        console.error('Failed to load profile:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchProfile();
-  }, [selectedPatientId]);
 
-  const handlePatientSelectChange = (id: string) => {
+        if (profRes.ok) {
+          const profData = await profRes.json();
+          if (profData.profile) {
+            setProfile(profData.profile);
+            setSelectedPatientId(profData.profile.id);
+            setProfileError(null);
+          } else {
+            setProfileError('Patient profile not found.');
+          }
+        } else {
+          setProfileError('Failed to load patient profile.');
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore && (err as Error)?.name !== 'AbortError') {
+          console.error('Failed to load profile:', err);
+          setProfileError('Unable to connect to profile service. Please retry.');
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [requestedPatientId]);
+
+  const loadProfileDirect = async (targetId: string) => {
+    try {
+      setLoading(true);
+      setProfileError(null);
+      const res = await fetch(`/api/profile?patientId=${encodeURIComponent(targetId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) setProfile(data.profile);
+      }
+    } catch (err) {
+      console.error('Failed to switch profile patient:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePatientSelectChange = async (id: string) => {
     setSelectedPatientId(id);
     router.push(`/profile?patientId=${encodeURIComponent(id)}`);
+    await loadProfileDirect(id);
   };
 
   const generateMockAbha = () => {
@@ -105,7 +140,7 @@ function ProfileContent() {
     }
   };
 
-  if (loading || !profile) {
+  if (loading && !profile) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
         <div className="animate-pulse space-y-6">
@@ -114,6 +149,30 @@ function ProfileContent() {
         </div>
       </div>
     );
+  }
+
+  if (profileError && !profile) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-12 text-center">
+        <div className="bg-white rounded-2xl border border-rose-200 p-12 max-w-lg mx-auto shadow-sm">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-4 text-rose-500">
+            <Heart className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-900">Failed to Load Profile</h3>
+          <p className="text-sm text-slate-500 mt-1 mb-6">{profileError}</p>
+          <button
+            onClick={() => loadProfileDirect(requestedPatientId)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 text-white font-medium text-sm hover:bg-teal-700 transition shadow-sm"
+          >
+            <span>Retry Loading Profile</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return null;
   }
 
   return (

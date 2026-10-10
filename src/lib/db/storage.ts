@@ -682,6 +682,7 @@ export async function saveMedicalRecord(record: MedicalDocumentRecord): Promise<
     }
   }
 
+  invalidatePatientsCache();
   return record;
 }
 
@@ -721,6 +722,7 @@ export async function deleteMedicalRecord(id: string, requestUserId?: string): P
     }
   }
 
+  invalidatePatientsCache();
   return changed;
 }
 
@@ -745,11 +747,29 @@ export function enrichRecordPatientId(record: MedicalDocumentRecord): MedicalDoc
   return record;
 }
 
+// In-memory cache for ultra-fast patient retrieval and reduced database roundtrips
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+let patientsCache: CacheEntry<PatientProfile[]> | null = null;
+const PATIENTS_CACHE_TTL_MS = 15_000;
+
+export function invalidatePatientsCache(): void {
+  patientsCache = null;
+}
+
 /**
  * Get all registered patients with real-time calculated metrics from saved documents.
+ * High-performance: uses lightweight counting queries and server-side memory caching.
  */
 export async function getAllPatients(): Promise<PatientProfile[]> {
   ensureStorageInitialized();
+
+  // Fast-path: return cached patient directory if fresh
+  if (patientsCache && (Date.now() - patientsCache.timestamp < PATIENTS_CACHE_TTL_MS)) {
+    return patientsCache.data;
+  }
 
   let patients: PatientProfile[] = [];
 
@@ -808,15 +828,102 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
     }
   }
 
-  // 4. Compute metrics live from actual persisted records
-  const allRecords = await getAllMedicalRecords();
+  // 4. Compute metrics live from actual persisted records using lightweight queries
+  // (selects only counting fields, completely avoiding transfer of megabytes of summaries and raw text)
+  let docSummaries: Array<{ id: string; patientId?: string; patientName?: string; docDate: string }> = [];
+  const abnormalObsDocIds = new Set<string>();
+  const activeMedDocIds = new Map<string, number>();
+  const diagMap = new Map<string, string[]>();
 
+  if (isSupabaseConfigured && supabase && configuredMode !== 'local') {
+    try {
+      const [docsRes, obsRes, medsRes, diagRes] = await Promise.all([
+        supabase.from('medical_documents').select('id, user_id, file_path, patient_name_extracted, document_date, created_at'),
+        supabase.from('extracted_observations').select('document_id, flag').in('flag', ['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW']),
+        supabase.from('medications').select('document_id').eq('is_active', true),
+        supabase.from('diagnoses').select('document_id, condition_name'),
+      ]);
+
+      if (docsRes.data) {
+        docSummaries = docsRes.data.map((d: Record<string, unknown>) => {
+          let patId = (d.user_id as string) || undefined;
+          const filePath = (d.file_path as string) || '';
+          if (filePath.startsWith('patients/')) {
+            const pipeIdx = filePath.indexOf('|');
+            if (pipeIdx > 0) patId = filePath.substring('patients/'.length, pipeIdx);
+          }
+          return {
+            id: d.id as string,
+            patientId: patId,
+            patientName: (d.patient_name_extracted as string) || undefined,
+            docDate: (d.document_date as string) || (d.created_at ? (d.created_at as string).split('T')[0] : new Date().toISOString().split('T')[0]),
+          };
+        });
+      }
+
+      (obsRes.data || []).forEach((row: Record<string, unknown>) => {
+        if (row.document_id) abnormalObsDocIds.add(row.document_id as string);
+      });
+
+      (medsRes.data || []).forEach((row: Record<string, unknown>) => {
+        const docId = row.document_id as string;
+        if (docId) activeMedDocIds.set(docId, (activeMedDocIds.get(docId) || 0) + 1);
+      });
+
+      (diagRes.data || []).forEach((row: Record<string, unknown>) => {
+        const docId = row.document_id as string;
+        const cond = row.condition_name as string;
+        if (docId && cond) {
+          const list = diagMap.get(docId) || [];
+          list.push(cond);
+          diagMap.set(docId, list);
+        }
+      });
+    } catch {
+      // cloud fetch failed, fall back to local
+    }
+  }
+
+  // Cross-reference / fallback to local records
+  if (docSummaries.length === 0) {
+    try {
+      if (fs.existsSync(RECORDS_FILE)) {
+        const raw = fs.readFileSync(RECORDS_FILE, 'utf-8');
+        const localRecs: MedicalDocumentRecord[] = JSON.parse(raw);
+        docSummaries = localRecs.map((r) => ({
+          id: r.id,
+          patientId: r.patientId || r.userId,
+          patientName: r.patientNameExtracted || undefined,
+          docDate: r.documentDate || r.uploadedAt.split('T')[0],
+        }));
+        localRecs.forEach((r) => {
+          r.observations?.forEach((o) => {
+            if (['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW'].includes(o.flag)) {
+              abnormalObsDocIds.add(r.id);
+            }
+          });
+          const activeCount = r.medications?.filter((m) => m.isActive).length || 0;
+          if (activeCount > 0) activeMedDocIds.set(r.id, activeCount);
+          r.diagnoses?.forEach((d) => {
+            if (d.conditionName) {
+              const list = diagMap.get(r.id) || [];
+              list.push(d.conditionName);
+              diagMap.set(r.id, list);
+            }
+          });
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Compute live metrics per patient
   for (const p of patients) {
-    const patientRecs = allRecords.filter(
-      (r) =>
-        r.patientId === p.id ||
-        r.userId === p.id ||
-        (r.patientNameExtracted && r.patientNameExtracted.toLowerCase().trim() === p.fullName.toLowerCase().trim())
+    const matchingDocs = docSummaries.filter(
+      (d) =>
+        d.patientId === p.id ||
+        (d.patientName && d.patientName.toLowerCase().trim() === p.fullName.toLowerCase().trim())
     );
 
     let abnormalCount = 0;
@@ -824,30 +931,18 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
     let lastVisit: string | null = null;
     const conditionsSet = new Set<string>(p.chronicConditions || []);
 
-    for (const rec of patientRecs) {
-      for (const obs of rec.observations) {
-        if (['HIGH', 'LOW', 'CRITICAL_HIGH', 'CRITICAL_LOW'].includes(obs.flag)) {
-          abnormalCount++;
-        }
-      }
-      for (const med of rec.medications) {
-        if (med.isActive) {
-          activeMeds++;
-        }
-      }
-      for (const diag of rec.diagnoses) {
-        if (diag.conditionName) {
-          conditionsSet.add(diag.conditionName);
-        }
-      }
-      const docDate = rec.documentDate || rec.uploadedAt.split('T')[0];
-      if (!lastVisit || new Date(docDate) > new Date(lastVisit)) {
-        lastVisit = docDate;
+    for (const doc of matchingDocs) {
+      if (abnormalObsDocIds.has(doc.id)) abnormalCount++;
+      activeMeds += activeMedDocIds.get(doc.id) || 0;
+      const diags = diagMap.get(doc.id) || [];
+      diags.forEach((c) => conditionsSet.add(c));
+      if (!lastVisit || new Date(doc.docDate) > new Date(lastVisit)) {
+        lastVisit = doc.docDate;
       }
     }
 
     p.metrics = {
-      totalDocuments: patientRecs.length,
+      totalDocuments: matchingDocs.length,
       abnormalObservationsCount: abnormalCount,
       activeMedicationsCount: activeMeds,
       lastVisitDate: lastVisit,
@@ -856,11 +951,19 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
   }
 
   // Sort real patients first, demo patients last
-  return patients.sort((a, b) => {
+  const sorted = patients.sort((a, b) => {
     if (a.isDemo && !b.isDemo) return 1;
     if (!a.isDemo && b.isDemo) return -1;
     return a.fullName.localeCompare(b.fullName);
   });
+
+  // Store in cache
+  patientsCache = {
+    data: sorted,
+    timestamp: Date.now(),
+  };
+
+  return sorted;
 }
 
 /**
@@ -945,6 +1048,7 @@ export async function createPatient(data: Partial<PatientProfile>): Promise<Pati
     }
   }
 
+  invalidatePatientsCache();
   return newPatient;
 }
 
@@ -1029,6 +1133,7 @@ export async function updatePatientProfile(
     }
   }
 
+  invalidatePatientsCache();
   return merged;
 }
 
@@ -1058,6 +1163,7 @@ export async function deletePatient(id: string): Promise<boolean> {
     }
   }
 
+  invalidatePatientsCache();
   return true;
 }
 

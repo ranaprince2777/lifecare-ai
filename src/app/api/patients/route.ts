@@ -18,11 +18,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      patients,
-      total: patients.length,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        patients,
+        total: patients.length,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, s-maxage=5, stale-while-revalidate=30',
+        },
+      }
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to fetch patients';
     return NextResponse.json({ error: msg }, { status: 500 });

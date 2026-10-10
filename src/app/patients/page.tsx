@@ -36,39 +36,61 @@ export default function PatientsPage() {
   const [chronicConditions, setChronicConditions] = useState('');
   const [allergies, setAllergies] = useState('');
   const [isDemo, setIsDemo] = useState(false);
-
-  useEffect(() => {
-    let ignore = false;
-    fetch('/api/patients')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!ignore && data.success && Array.isArray(data.patients)) {
-          setPatients(data.patients);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!ignore) {
-          console.error('Failed to load patients', err);
-          setLoading(false);
-        }
-      });
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const refreshPatients = async () => {
     try {
+      setLoading(true);
+      setFetchError(null);
       const res = await fetch('/api/patients');
       const data = await res.json();
-      if (data.success && Array.isArray(data.patients)) {
+      if (res.ok && data.success && Array.isArray(data.patients)) {
         setPatients(data.patients);
+      } else {
+        setFetchError(data.error || 'Failed to load patient directory.');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to reload patients', err);
+      setFetchError('Unable to connect to patient directory.');
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    let ignore = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    fetch('/api/patients', { signal: controller.signal })
+      .then(async (res) => {
+        const data = await res.json();
+        if (ignore) return;
+        if (res.ok && data.success && Array.isArray(data.patients)) {
+          setPatients(data.patients);
+          setFetchError(null);
+        } else {
+          setFetchError(data.error || 'Failed to load patient directory.');
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore && (err as Error)?.name !== 'AbortError') {
+          console.error('Failed to load patients', err);
+          setFetchError('Unable to connect to patient directory. Please check connection and retry.');
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, []);
 
   const handleCreatePatient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +247,20 @@ export default function PatientsPage() {
           <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
             <div className="animate-spin w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
             <p className="text-slate-500 text-sm font-medium">Loading patient directory...</p>
+          </div>
+        ) : fetchError && patients.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-rose-200 p-12 text-center shadow-sm max-w-lg mx-auto">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto mb-4 text-rose-500">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">Failed to Load Directory</h3>
+            <p className="text-sm text-slate-500 mt-1 mb-6">{fetchError}</p>
+            <button
+              onClick={() => refreshPatients()}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 text-white font-medium text-sm hover:bg-teal-700 transition shadow-sm"
+            >
+              <span>Retry Loading Directory</span>
+            </button>
           </div>
         ) : filteredPatients.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm max-w-lg mx-auto">

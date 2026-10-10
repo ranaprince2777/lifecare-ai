@@ -8,10 +8,17 @@ export async function GET(req: NextRequest) {
 
     const stats = await getDashboardMetrics(patientId);
 
-    return NextResponse.json({
-      success: true,
-      stats,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        stats,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, s-maxage=5, stale-while-revalidate=30',
+        },
+      }
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to calculate dashboard metrics';
     return NextResponse.json({ error: msg }, { status: 500 });

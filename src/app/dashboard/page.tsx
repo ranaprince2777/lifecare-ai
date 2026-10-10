@@ -51,14 +51,17 @@ function DashboardContent() {
 
   // Load dashboard metrics and records whenever selectedPatientId changes
   useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     async function loadDashboard() {
       try {
         setLoading(true);
         const query = selectedPatientId && selectedPatientId !== 'all' ? `?patientId=${encodeURIComponent(selectedPatientId)}` : '';
 
         const [statsRes, recordsRes] = await Promise.all([
-          fetch(`/api/dashboard${query}`),
-          fetch(`/api/records${query}`),
+          fetch(`/api/dashboard${query}`, { signal: controller.signal }),
+          fetch(`/api/records${query}`, { signal: controller.signal }),
         ]);
 
         if (statsRes.ok) {
@@ -70,13 +73,20 @@ function DashboardContent() {
           const rData = await recordsRes.json();
           setRecords(rData.records || []);
         }
-      } catch (err) {
-        console.error('Failed to load dashboard statistics:', err);
+      } catch (err: unknown) {
+        if ((err as Error)?.name !== 'AbortError') {
+          console.error('Failed to load dashboard statistics:', err);
+        }
       } finally {
         setLoading(false);
       }
     }
     loadDashboard();
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, [selectedPatientId]);
 
   const handlePatientChange = (newId: string) => {

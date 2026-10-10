@@ -8,7 +8,14 @@ export async function GET(req: NextRequest) {
     const profile = patientId
       ? (await getPatientById(patientId)) || (await getPatientProfile())
       : await getPatientProfile();
-    return NextResponse.json({ profile });
+    return NextResponse.json(
+      { profile },
+      {
+        headers: {
+          'Cache-Control': 'private, s-maxage=5, stale-while-revalidate=30',
+        },
+      }
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Failed to fetch profile';
     return NextResponse.json({ error: msg }, { status: 500 });

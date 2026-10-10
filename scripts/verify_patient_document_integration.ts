@@ -69,7 +69,7 @@ async function runPatientDocumentIntegrationAudit() {
     const baseContent = fs.readFileSync(samplePath);
     const commentBuf = Buffer.from(`\n% Unique test run ID: ${uniqueTag} for Dr. Arjun Mehta\n`);
     testDocBuffer = Buffer.concat([baseContent, commentBuf]);
-  } catch (_err: unknown) {
+  } catch {
     testDocBuffer = Buffer.from(`%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n% Tag: ${uniqueTag}\n%%EOF`);
   }
 

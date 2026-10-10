@@ -43,31 +43,50 @@ export function validateDocument(
     };
   }
 
-  // Detect mime type from signature / header if possible
-  let detectedMime = providedMimeType?.toLowerCase() || '';
+  // Inspect magic bytes & validate file signature
+  const isPdfMagic = buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
+  const isPngMagic = buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  const isJpgMagic = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+
   const ext = fileName.split('.').pop()?.toLowerCase();
+  const claimsPdf = ext === 'pdf' || providedMimeType?.toLowerCase() === 'application/pdf';
+  const claimsPng = ext === 'png' || providedMimeType?.toLowerCase() === 'image/png';
+  const claimsJpg = ext === 'jpg' || ext === 'jpeg' || providedMimeType?.toLowerCase() === 'image/jpeg';
+  let detectedMime = providedMimeType?.toLowerCase() || '';
 
-  // Inspect magic bytes
-  if (buffer.length >= 4) {
-    // PDF: %PDF (25 50 44 46)
-    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
-      detectedMime = 'application/pdf';
+  if (claimsPdf) {
+    if (!isPdfMagic) {
+      return {
+        isValid: false,
+        error: 'The uploaded file is not a valid PDF document. Please upload an uncorrupted PDF.',
+        sizeBytes,
+      };
     }
-    // PNG: 89 50 4E 47
-    else if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-      detectedMime = 'image/png';
+    detectedMime = 'application/pdf';
+  } else if (claimsPng) {
+    if (!isPngMagic) {
+      return {
+        isValid: false,
+        error: 'The uploaded file is not a valid PNG image. Please upload an uncorrupted PNG.',
+        sizeBytes,
+      };
     }
-    // JPEG: FF D8 FF
-    else if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-      detectedMime = 'image/jpeg';
+    detectedMime = 'image/png';
+  } else if (claimsJpg) {
+    if (!isJpgMagic) {
+      return {
+        isValid: false,
+        error: 'The uploaded file is not a valid JPEG image. Please upload an uncorrupted JPEG.',
+        sizeBytes,
+      };
     }
-  }
-
-  // Check extension fallback
-  if (!detectedMime) {
-    if (ext === 'pdf') detectedMime = 'application/pdf';
-    else if (ext === 'jpg' || ext === 'jpeg') detectedMime = 'image/jpeg';
-    else if (ext === 'png') detectedMime = 'image/png';
+    detectedMime = 'image/jpeg';
+  } else if (isPdfMagic) {
+    detectedMime = 'application/pdf';
+  } else if (isPngMagic) {
+    detectedMime = 'image/png';
+  } else if (isJpgMagic) {
+    detectedMime = 'image/jpeg';
   }
 
   if (!ALLOWED_MIME_TYPES.includes(detectedMime)) {
